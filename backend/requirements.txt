@@ -1,0 +1,25 @@
+# NRL 2.0 — Python Dependencies
+# Python 3.12+
+
+# Web Framework
+fastapi==0.115.12
+uvicorn[standard]==0.34.2
+
+# Database (SQLite)
+sqlalchemy==2.0.40
+aiosqlite==0.21.0
+
+# Auth
+python-jose[cryptography]==3.4.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.20
+
+# Validation
+pydantic==2.11.3
+email-validator==2.2.0
+
+# Environment
+python-dotenv==1.1.0
+
+# AI Engine
+numpy==2.2.5
