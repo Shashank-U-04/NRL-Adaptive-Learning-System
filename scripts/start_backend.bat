@@ -1,6 +1,6 @@
 @echo off
 echo ===================================
-echo   NRL 2.0 Backend Server
+echo   NRL Adaptive Learning System Backend Server
 echo ===================================
 echo.
 echo Starting FastAPI on http://localhost:8000

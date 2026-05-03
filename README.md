@@ -1,4 +1,4 @@
-# NRL 2.0 — AI-Powered Adaptive Learning Platform
+# NRL Adaptive Learning System
 
 > Personalized learning that adapts to **your** pace using Reinforcement Learning.
 
@@ -7,7 +7,7 @@
 | Layer | Technology |
 |-------|-----------|
 | **Frontend** | Next.js 15, TypeScript, Tailwind CSS, Recharts, Framer Motion |
-| **Backend** | FastAPI, Python 3.12, SQLAlchemy 2.0, Pydantic v2 |
+| **Backend** | FastAPI, Python 3.12, SQLAlchemy, Pydantic |
 | **Database** | SQLite (local `database.db` file) |
 | **Auth** | JWT (access + refresh tokens), bcrypt |
 | **AI Engine** | Q-Learning trained agent + rule-based fallback |
