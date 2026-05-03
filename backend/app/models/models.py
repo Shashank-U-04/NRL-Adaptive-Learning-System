@@ -1,104 +1,65 @@
 """
-NRL 2.0 — Database Models
-
-All models use String(36) primary keys with uuid4 defaults.
-JSON type instead of JSONB for SQLite compatibility.
+NRL Adaptive Learning System — PostgreSQL ORM Models
 
 Tables:
-  users, profiles, topics, questions, sessions,
-  session_events, question_attempts, learner_metrics
+  users, topics, learning_modules, learning_events, module_progress,
+  questions, sessions, question_attempts, learner_metrics,
+  profiles, session_events
+
+All indexes match the architecture plan for query performance.
 """
 
 import uuid
-import enum
 from datetime import datetime, timezone
 from sqlalchemy import (
-    String, Boolean, Integer, Float, DateTime, ForeignKey, Text, JSON,
-    Index, Enum as SAEnum,
+    Column, String, Boolean, Float, Integer,
+    DateTime, ForeignKey, Text, Index, UniqueConstraint,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import relationship
 
 from backend.app.core.database import Base
 
 
-def new_uuid() -> str:
+def _uuid() -> str:
     return str(uuid.uuid4())
 
 
-def utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+# ─────────────────────────────────────────────────────────
+#  Users & Auth
+# ─────────────────────────────────────────────────────────
 
-
-# ── Enums ────────────────────────────────────────────────
-class UserRole(str, enum.Enum):
-    STUDENT = "student"
-    TEACHER = "teacher"
-    ADMIN = "admin"
-
-
-class KnowledgeLevel(str, enum.Enum):
-    BEGINNER = "beginner"
-    INTERMEDIATE = "intermediate"
-    ADVANCED = "advanced"
-
-
-class Difficulty(str, enum.Enum):
-    EASY = "easy"
-    MEDIUM = "medium"
-    HARD = "hard"
-
-
-class SessionStatus(str, enum.Enum):
-    ACTIVE = "active"
-    COMPLETED = "completed"
-    ABANDONED = "abandoned"
-
-
-class ActionType(str, enum.Enum):
-    PRESENT_EASY = "present_easy_question"
-    PRESENT_MEDIUM = "present_medium_question"
-    PRESENT_HARD = "present_hard_question"
-    GIVE_HINT = "give_hint"
-    REVIEW_PREVIOUS = "review_previous_topic"
-    MOVE_NEXT = "move_to_next_topic"
-    END_SESSION = "end_session"
-
-
-# ── Users ────────────────────────────────────────────────
 class User(Base):
     __tablename__ = "users"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
-    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
-    name: Mapped[str] = mapped_column(String(100), nullable=False)
-    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
-    role: Mapped[str] = mapped_column(String(20), default="student")
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    id = Column(String, primary_key=True, default=_uuid)
+    name = Column(String(100), nullable=False)
+    email = Column(String(255), unique=True, index=True, nullable=False)
+    password_hash = Column(String(255), nullable=False)
+    role = Column(String(20), default="student", nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
-    # Relationships
-    profile: Mapped["Profile"] = relationship(back_populates="user", uselist=False, cascade="all, delete-orphan")
-    sessions: Mapped[list["Session"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    profile = relationship("Profile", back_populates="user", uselist=False, lazy="selectin")
+    sessions = relationship("Session", back_populates="user")
 
 
-# ── Profiles ─────────────────────────────────────────────
 class Profile(Base):
     __tablename__ = "profiles"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
-    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), unique=True, nullable=False)
-    knowledge_level: Mapped[str] = mapped_column(String(20), default="beginner")
-    current_streak: Mapped[int] = mapped_column(Integer, default=0)
-    longest_streak: Mapped[int] = mapped_column(Integer, default=0)
-    total_xp: Mapped[int] = mapped_column(Integer, default=0)
-    sessions_completed: Mapped[int] = mapped_column(Integer, default=0)
-    total_questions_answered: Mapped[int] = mapped_column(Integer, default=0)
-    total_correct: Mapped[int] = mapped_column(Integer, default=0)
-    daily_goal_minutes: Mapped[int] = mapped_column(Integer, default=30)
-    last_active: Mapped[datetime | None] = mapped_column(DateTime, default=None)
+    id = Column(String, primary_key=True, default=_uuid)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
+    knowledge_level = Column(String(20), default="beginner")
+    current_streak = Column(Integer, default=0)
+    longest_streak = Column(Integer, default=0)
+    total_xp = Column(Integer, default=0)
+    sessions_completed = Column(Integer, default=0)
+    total_questions_answered = Column(Integer, default=0)
+    total_correct = Column(Integer, default=0)
+    daily_goal_minutes = Column(Integer, default=30)
+    last_active = Column(DateTime(timezone=True), nullable=True)
 
-    user: Mapped["User"] = relationship(back_populates="profile")
+    user = relationship("User", back_populates="profile")
 
     @property
     def accuracy(self) -> float:
@@ -107,65 +68,132 @@ class Profile(Base):
         return round(self.total_correct / self.total_questions_answered * 100, 1)
 
 
-# ── Topics ───────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────
+#  Topics (Allowlist for security)
+# ─────────────────────────────────────────────────────────
+
 class Topic(Base):
     __tablename__ = "topics"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
-    name: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
-    description: Mapped[str | None] = mapped_column(Text, default=None)
-    order_index: Mapped[int] = mapped_column(Integer, default=0)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-
-    questions: Mapped[list["Question"]] = relationship(back_populates="topic", cascade="all, delete-orphan")
+    id = Column(String(50), primary_key=True)       # e.g. "sql-injection"
+    title = Column(String(100), nullable=False)
+    description = Column(Text, nullable=True)
+    order_index = Column(Integer, default=0)
+    is_active = Column(Boolean, default=True)
 
 
-# ── Questions ────────────────────────────────────────────
-class Question(Base):
-    __tablename__ = "questions"
+# ─────────────────────────────────────────────────────────
+#  Learning Modules  (AI-generated, versioned, idempotent)
+# ─────────────────────────────────────────────────────────
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
-    topic_id: Mapped[str] = mapped_column(String(36), ForeignKey("topics.id"), nullable=False)
-    difficulty: Mapped[str] = mapped_column(String(20), nullable=False)
-    text: Mapped[str] = mapped_column(Text, nullable=False)
-    options: Mapped[dict] = mapped_column(JSON, nullable=False)
-    correct_answer: Mapped[str] = mapped_column(String(500), nullable=False)
-    explanation: Mapped[str | None] = mapped_column(Text, default=None)
-    hint: Mapped[str | None] = mapped_column(Text, default=None)
-    times_served: Mapped[int] = mapped_column(Integer, default=0)
-    times_correct: Mapped[int] = mapped_column(Integer, default=0)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+class LearningModule(Base):
+    __tablename__ = "learning_modules"
 
-    topic: Mapped["Topic"] = relationship(back_populates="questions")
-    attempts: Mapped[list["QuestionAttempt"]] = relationship(back_populates="question")
+    id = Column(String, primary_key=True, default=_uuid)
+    topic_id = Column(String(50), ForeignKey("topics.id"), nullable=False)
+    version = Column(Integer, default=1)
+    is_active = Column(Boolean, default=True)
+    is_ai_generated = Column(Boolean, default=False, nullable=False)
+    content = Column(JSONB, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
+    # Enforce: only ONE active module per topic at a time (idempotency guarantee)
     __table_args__ = (
-        Index("ix_questions_topic_diff", "topic_id", "difficulty"),
+        Index("idx_unique_active_topic", "topic_id", unique=True,
+              postgresql_where=Column("is_active") == True),  # noqa: E712
     )
 
 
-# ── Sessions ─────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────
+#  Learning Telemetry
+# ─────────────────────────────────────────────────────────
+
+class LearningEvent(Base):
+    __tablename__ = "learning_events"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    topic_id = Column(String(50), ForeignKey("topics.id"), nullable=False)
+    event_type = Column(String(20), nullable=False)   # 'mcq' | 'lab'
+    is_correct = Column(Boolean, nullable=True)
+    details = Column(JSONB, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    # Performance index per plan
+    __table_args__ = (
+        Index("idx_learning_events_user_topic", "user_id", "topic_id"),
+    )
+
+
+class ModuleProgress(Base):
+    __tablename__ = "module_progress"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    topic_id = Column(String(50), ForeignKey("topics.id"), nullable=False)
+    is_completed = Column(Boolean, default=False)
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "topic_id", name="uq_module_progress_user_topic"),
+    )
+
+
+# ─────────────────────────────────────────────────────────
+#  Questions  (Quiz Mode)
+# ─────────────────────────────────────────────────────────
+
+class Question(Base):
+    __tablename__ = "questions"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    topic_id = Column(String(50), ForeignKey("topics.id"), nullable=False)
+    difficulty = Column(String(10), nullable=False)   # 'easy' | 'medium' | 'hard'
+    source = Column(String(20), default="dataset")    # 'dataset' | 'ai'
+    text = Column(Text, nullable=False)
+    options = Column(JSONB, nullable=False)
+    correct_answer = Column(String(10), nullable=False)
+    explanation = Column(Text, nullable=True)
+    hint = Column(Text, nullable=True)
+    times_served = Column(Integer, default=0)
+    times_correct = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    # Performance index per plan
+    __table_args__ = (
+        Index("idx_questions_topic_difficulty", "topic_id", "difficulty"),
+    )
+
+
+# ─────────────────────────────────────────────────────────
+#  Quiz Sessions & RL State
+# ─────────────────────────────────────────────────────────
+
 class Session(Base):
     __tablename__ = "sessions"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
-    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
-    status: Mapped[str] = mapped_column(String(20), default="active")
-    total_reward: Mapped[float] = mapped_column(Float, default=0.0)
-    total_steps: Mapped[int] = mapped_column(Integer, default=0)
-    questions_answered: Mapped[int] = mapped_column(Integer, default=0)
-    correct_answers: Mapped[int] = mapped_column(Integer, default=0)
-    hints_used: Mapped[int] = mapped_column(Integer, default=0)
-    final_knowledge_level: Mapped[int | None] = mapped_column(Integer, default=None)
-    started_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
-    ended_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
+    id = Column(String, primary_key=True, default=_uuid)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    topic_id = Column(String(50), ForeignKey("topics.id"), nullable=True)
+    status = Column(String(20), default="active")           # 'active' | 'completed'
+    state_vector = Column(JSONB, nullable=True)             # Rich RL features snapshot
+    last_action = Column(Integer, nullable=True)            # Last RL action index
+    last_reward = Column(Float, nullable=True)              # Last computed reward
+    total_steps = Column(Integer, default=0)
+    questions_answered = Column(Integer, default=0)
+    correct_answers = Column(Integer, default=0)
+    total_reward = Column(Float, default=0.0)
+    hints_used = Column(Integer, default=0)
+    started_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    ended_at = Column(DateTime(timezone=True), nullable=True)
+    final_knowledge_level = Column(Integer, nullable=True)
 
-    user: Mapped["User"] = relationship(back_populates="sessions")
-    events: Mapped[list["SessionEvent"]] = relationship(back_populates="session", cascade="all, delete-orphan")
-    attempts: Mapped[list["QuestionAttempt"]] = relationship(back_populates="session", cascade="all, delete-orphan")
+    user = relationship("User", back_populates="sessions")
+    events = relationship("SessionEvent", back_populates="session")
 
+    # Performance index per plan
     __table_args__ = (
-        Index("ix_sessions_user", "user_id"),
+        Index("idx_sessions_user", "user_id"),
     )
 
     @property
@@ -181,59 +209,55 @@ class Session(Base):
         return None
 
 
-# ── Session Events ───────────────────────────────────────
 class SessionEvent(Base):
+    """Detailed RL step log for traceability and future training."""
     __tablename__ = "session_events"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
-    session_id: Mapped[str] = mapped_column(String(36), ForeignKey("sessions.id"), nullable=False)
-    step_number: Mapped[int] = mapped_column(Integer, nullable=False)
-    state_before: Mapped[dict] = mapped_column(JSON, nullable=False)
-    action_taken: Mapped[str] = mapped_column(String(50), nullable=False)
-    reward: Mapped[float] = mapped_column(Float, nullable=False)
-    state_after: Mapped[dict] = mapped_column(JSON, nullable=False)
-    explanation: Mapped[str | None] = mapped_column(Text, default=None)
-    timestamp: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    id = Column(String, primary_key=True, default=_uuid)
+    session_id = Column(String, ForeignKey("sessions.id"), nullable=False, index=True)
+    step_number = Column(Integer, nullable=False)
+    state_before = Column(JSONB, nullable=True)
+    action_taken = Column(String(50), nullable=True)
+    reward = Column(Float, nullable=True)
+    state_after = Column(JSONB, nullable=True)
+    explanation = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
-    session: Mapped["Session"] = relationship(back_populates="events")
+    session = relationship("Session", back_populates="events")
 
 
-# ── Question Attempts ───────────────────────────────────
 class QuestionAttempt(Base):
     __tablename__ = "question_attempts"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
-    session_id: Mapped[str] = mapped_column(String(36), ForeignKey("sessions.id"), nullable=False)
-    question_id: Mapped[str] = mapped_column(String(36), ForeignKey("questions.id"), nullable=True)
-    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
-    selected_answer: Mapped[str] = mapped_column(String(500), nullable=False)
-    is_correct: Mapped[bool] = mapped_column(Boolean, nullable=False)
-    time_taken_seconds: Mapped[int] = mapped_column(Integer, default=0)
-    hint_used: Mapped[bool] = mapped_column(Boolean, default=False)
-    difficulty: Mapped[str] = mapped_column(String(20), nullable=False)
-    answered_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
-
-    session: Mapped["Session"] = relationship(back_populates="attempts")
-    question: Mapped["Question | None"] = relationship(back_populates="attempts")
-
-    __table_args__ = (
-        Index("ix_attempts_user", "user_id"),
-    )
+    id = Column(String, primary_key=True, default=_uuid)
+    session_id = Column(String, ForeignKey("sessions.id"), nullable=False, index=True)
+    question_id = Column(String, ForeignKey("questions.id"), nullable=True)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    selected_answer = Column(String(10), nullable=False)
+    is_correct = Column(Boolean, nullable=False)
+    time_taken_seconds = Column(Integer, default=0)
+    difficulty = Column(String(10), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
-# ── Learner Metrics (per-topic) ──────────────────────────
+# ─────────────────────────────────────────────────────────
+#  Learner Metrics (per user per topic)
+# ─────────────────────────────────────────────────────────
+
 class LearnerMetric(Base):
     __tablename__ = "learner_metrics"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
-    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
-    topic_id: Mapped[str] = mapped_column(String(36), ForeignKey("topics.id"), nullable=False)
-    mastery_score: Mapped[float] = mapped_column(Float, default=0.0)
-    questions_attempted: Mapped[int] = mapped_column(Integer, default=0)
-    questions_correct: Mapped[int] = mapped_column(Integer, default=0)
-    avg_time_seconds: Mapped[float] = mapped_column(Float, default=0.0)
-    last_practiced: Mapped[datetime | None] = mapped_column(DateTime, default=None)
+    id = Column(String, primary_key=True, default=_uuid)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    topic_id = Column(String(50), ForeignKey("topics.id"), nullable=False)
+    xp = Column(Integer, default=0)
+    mastery_score = Column(Float, default=0.0)
+    questions_attempted = Column(Integer, default=0)
+    questions_correct = Column(Integer, default=0)
+    avg_time_seconds = Column(Float, default=0.0)
+    last_practiced = Column(DateTime(timezone=True), nullable=True)
+    difficulty_history = Column(JSONB, nullable=True)   # Tracks progression over time
 
     __table_args__ = (
-        Index("ix_learner_metrics_user_topic", "user_id", "topic_id", unique=True),
+        UniqueConstraint("user_id", "topic_id", name="uq_learner_metrics_user_topic"),
     )
