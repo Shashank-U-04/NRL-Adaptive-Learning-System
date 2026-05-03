@@ -1,5 +1,5 @@
 """
-NRL 2.0 — Auth Service
+NRL Adaptive Learning System — Auth Service
 
 Register, login, refresh tokens, fetch user.
 """
