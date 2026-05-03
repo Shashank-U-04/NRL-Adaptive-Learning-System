@@ -1,1 +1,1 @@
-# NRL 2.0 Backend Package
+# NRL Adaptive Learning System Backend Package
