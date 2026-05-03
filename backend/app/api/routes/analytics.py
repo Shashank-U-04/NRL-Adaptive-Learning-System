@@ -1,5 +1,5 @@
 """
-NRL 2.0 — Analytics Router
+NRL Adaptive Learning System — Analytics Router
 
 GET /analytics/dashboard, /analytics/accuracy, /analytics/topics
 """
