@@ -1,5 +1,5 @@
 """
-NRL 2.0 — In-Memory Session Store
+NRL Adaptive Learning System — In-Memory Session Store
 
 Replaces Redis for session state caching.
 Thread-safe dict with TTL-based expiry.
