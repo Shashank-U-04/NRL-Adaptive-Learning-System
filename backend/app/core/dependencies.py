@@ -1,5 +1,5 @@
 """
-NRL 2.0 — Auth Dependencies
+NRL Adaptive Learning System — Auth Dependencies
 
 Extracts current user from JWT in Authorization header.
 """

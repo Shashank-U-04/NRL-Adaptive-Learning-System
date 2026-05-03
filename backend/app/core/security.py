@@ -1,18 +1,21 @@
 """
-NRL 2.0 — JWT Authentication & Password Hashing
+NRL Adaptive Learning System — JWT Authentication & Password Hashing
 
-- bcrypt password hashing
-- Access + Refresh JWT tokens
+- bcrypt password hashing via passlib
+- Access + Refresh JWT tokens via PyJWT
 - OAuth2 bearer scheme
 """
 
 from datetime import datetime, timedelta, timezone
-from jose import jwt, JWTError
+import jwt
 from passlib.context import CryptContext
 from fastapi import HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 
-from backend.app.core.config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS
+from backend.app.core.config import (
+    SECRET_KEY, ALGORITHM,
+    ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS,
+)
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
@@ -43,9 +46,15 @@ def create_refresh_token(data: dict) -> str:
 def decode_token(token: str) -> dict:
     try:
         return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-    except JWTError:
+    except jwt.ExpiredSignatureError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
+            detail="Token has expired",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except jwt.InvalidTokenError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or malformed token",
             headers={"WWW-Authenticate": "Bearer"},
         )
