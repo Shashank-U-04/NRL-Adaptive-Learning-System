@@ -1,0 +1,182 @@
+[
+  {
+    "id": "websec-l3-001",
+    "topic": "SQL Injection",
+    "difficulty": "hard",
+    "type": "multiple_choice",
+    "question": "A query uses parameters for values but concatenates a table name from user input. What is the best fix?",
+    "options": {
+      "A": "Map user choices to a fixed allow-list of table names",
+      "B": "Escape the table name with HTML encoding",
+      "C": "Hash the table name",
+      "D": "Trust the value because parameters are used elsewhere"
+    },
+    "correct_answer": "A",
+    "explanation": "Identifiers such as table names should come from trusted mappings, not raw user input."
+  },
+  {
+    "id": "websec-l3-002",
+    "topic": "SQL Injection",
+    "difficulty": "hard",
+    "type": "multiple_choice",
+    "question": "What makes second-order SQL injection different?",
+    "options": {
+      "A": "The payload is stored first and executed in a later query",
+      "B": "It only affects NoSQL databases",
+      "C": "It requires physical server access",
+      "D": "It can only happen in SELECT statements"
+    },
+    "correct_answer": "A",
+    "explanation": "Second-order injection occurs when stored malicious data is later used unsafely in SQL."
+  },
+  {
+    "id": "websec-l3-003",
+    "topic": "SQL Injection",
+    "difficulty": "hard",
+    "type": "multiple_choice",
+    "question": "Which mitigation best detects SQL injection attempts during testing?",
+    "options": {
+      "A": "DAST or security tests with injection payloads",
+      "B": "Changing button colors",
+      "C": "Removing all indexes",
+      "D": "Turning off foreign keys"
+    },
+    "correct_answer": "A",
+    "explanation": "Dynamic security testing and targeted tests can exercise endpoints with malicious inputs."
+  },
+  {
+    "id": "websec-l3-004",
+    "topic": "XSS",
+    "difficulty": "hard",
+    "type": "multiple_choice",
+    "question": "Why are JavaScript template literal contexts dangerous for untrusted data?",
+    "options": {
+      "A": "Breaking out of the string can lead to script execution",
+      "B": "They always block script execution",
+      "C": "They convert data to SQL automatically",
+      "D": "They remove the need for CSP"
+    },
+    "correct_answer": "A",
+    "explanation": "Untrusted data in JavaScript contexts needs JavaScript-specific escaping or safer data transfer patterns."
+  },
+  {
+    "id": "websec-l3-005",
+    "topic": "XSS",
+    "difficulty": "hard",
+    "type": "multiple_choice",
+    "question": "Which CSP pattern is generally stronger against injected inline scripts?",
+    "options": {
+      "A": "script-src with nonces or hashes and no unsafe-inline",
+      "B": "script-src * 'unsafe-inline'",
+      "C": "No CSP header",
+      "D": "style-src only"
+    },
+    "correct_answer": "A",
+    "explanation": "Nonces or hashes allow approved scripts while blocking arbitrary injected inline code."
+  },
+  {
+    "id": "websec-l3-006",
+    "topic": "XSS",
+    "difficulty": "hard",
+    "type": "multiple_choice",
+    "question": "DOM-based XSS most often happens when JavaScript:",
+    "options": {
+      "A": "Writes untrusted data into dangerous sinks like innerHTML",
+      "B": "Uses prepared statements",
+      "C": "Hashes passwords server-side",
+      "D": "Sets SameSite cookies"
+    },
+    "correct_answer": "A",
+    "explanation": "DOM XSS occurs in client-side code when attacker-controlled data reaches executable DOM sinks."
+  },
+  {
+    "id": "websec-l3-007",
+    "topic": "Authentication Flaws",
+    "difficulty": "hard",
+    "type": "multiple_choice",
+    "question": "What is the main risk of storing JWT access tokens in localStorage?",
+    "options": {
+      "A": "XSS can read and exfiltrate them",
+      "B": "SQL queries become slower",
+      "C": "TLS stops working",
+      "D": "Passwords cannot be hashed"
+    },
+    "correct_answer": "A",
+    "explanation": "localStorage is accessible to JavaScript, so XSS can steal tokens."
+  },
+  {
+    "id": "websec-l3-008",
+    "topic": "Authentication Flaws",
+    "difficulty": "hard",
+    "type": "multiple_choice",
+    "question": "Which design helps make refresh tokens safer?",
+    "options": {
+      "A": "Rotation with reuse detection",
+      "B": "Never expiring tokens",
+      "C": "Putting them in URLs",
+      "D": "Sharing them across users"
+    },
+    "correct_answer": "A",
+    "explanation": "Refresh token rotation can invalidate stolen token families when reuse is detected."
+  },
+  {
+    "id": "websec-l3-009",
+    "topic": "Authentication Flaws",
+    "difficulty": "hard",
+    "type": "multiple_choice",
+    "question": "Why is account enumeration a security problem?",
+    "options": {
+      "A": "It helps attackers build valid username lists",
+      "B": "It improves MFA adoption",
+      "C": "It prevents password spraying",
+      "D": "It removes the need for logging"
+    },
+    "correct_answer": "A",
+    "explanation": "Knowing which accounts exist makes credential attacks easier to target."
+  },
+  {
+    "id": "websec-l3-010",
+    "topic": "SQL Injection",
+    "difficulty": "hard",
+    "type": "multiple_choice",
+    "question": "Why can escaping alone be weaker than parameterized queries?",
+    "options": {
+      "A": "Escaping rules are context-specific and easy to get wrong",
+      "B": "Escaping always deletes indexes",
+      "C": "Escaping disables TLS",
+      "D": "Escaping prevents logging"
+    },
+    "correct_answer": "A",
+    "explanation": "Parameterized queries enforce code/data separation more reliably than manual escaping."
+  },
+  {
+    "id": "websec-l3-011",
+    "topic": "XSS",
+    "difficulty": "hard",
+    "type": "multiple_choice",
+    "question": "When accepting limited HTML from users, which approach is safest?",
+    "options": {
+      "A": "Sanitize with a proven allow-list HTML sanitizer",
+      "B": "Block only the word script",
+      "C": "Trust users after login",
+      "D": "Store raw HTML and hope CSP handles it"
+    },
+    "correct_answer": "A",
+    "explanation": "Safe rich text requires robust sanitization that allows only approved elements and attributes."
+  },
+  {
+    "id": "websec-l3-012",
+    "topic": "Authentication Flaws",
+    "difficulty": "hard",
+    "type": "multiple_choice",
+    "question": "Which password hashing choice is most appropriate for a modern web app?",
+    "options": {
+      "A": "Argon2id or bcrypt with strong cost settings",
+      "B": "Unsalted SHA-1",
+      "C": "MD5",
+      "D": "Base64"
+    },
+    "correct_answer": "A",
+    "explanation": "Modern password hashes are intentionally slow and salted to resist offline cracking."
+  }
+]

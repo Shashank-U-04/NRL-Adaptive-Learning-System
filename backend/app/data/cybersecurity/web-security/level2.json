@@ -1,0 +1,182 @@
+[
+  {
+    "id": "websec-l2-001",
+    "topic": "SQL Injection",
+    "difficulty": "medium",
+    "type": "multiple_choice",
+    "question": "A developer uses `SELECT * FROM users WHERE email = ?` with a bound parameter. Why is this safer?",
+    "options": {
+      "A": "The database treats input as data, not SQL syntax",
+      "B": "The query never reaches the database",
+      "C": "The password becomes encrypted automatically",
+      "D": "The table is hidden from attackers"
+    },
+    "correct_answer": "A",
+    "explanation": "Bound parameters preserve the query structure and pass user input separately."
+  },
+  {
+    "id": "websec-l2-002",
+    "topic": "SQL Injection",
+    "difficulty": "medium",
+    "type": "multiple_choice",
+    "question": "Which practice is safest for dynamic SQL ORDER BY fields?",
+    "options": {
+      "A": "Concatenate the user value directly",
+      "B": "Allow-list known column names",
+      "C": "Base64 encode the column name",
+      "D": "Disable indexes"
+    },
+    "correct_answer": "B",
+    "explanation": "SQL identifiers cannot always be parameterized, so choose them from a strict allow-list."
+  },
+  {
+    "id": "websec-l2-003",
+    "topic": "SQL Injection",
+    "difficulty": "medium",
+    "type": "multiple_choice",
+    "question": "Which database permission model limits SQL injection damage?",
+    "options": {
+      "A": "Application user has only required privileges",
+      "B": "Application connects as database administrator",
+      "C": "All tables are writable by public users",
+      "D": "Backups are stored in the web root"
+    },
+    "correct_answer": "A",
+    "explanation": "Least privilege reduces what an injected query can read or modify."
+  },
+  {
+    "id": "websec-l2-004",
+    "topic": "XSS",
+    "difficulty": "medium",
+    "type": "multiple_choice",
+    "question": "Why is context-aware output encoding important?",
+    "options": {
+      "A": "HTML, JavaScript, URL, and attribute contexts need different escaping",
+      "B": "It compresses static files",
+      "C": "It replaces authentication",
+      "D": "It guarantees SQL safety"
+    },
+    "correct_answer": "A",
+    "explanation": "The safe encoding rules differ depending on where the untrusted value is inserted."
+  },
+  {
+    "id": "websec-l2-005",
+    "topic": "XSS",
+    "difficulty": "medium",
+    "type": "multiple_choice",
+    "question": "What does a Content Security Policy primarily reduce?",
+    "options": {
+      "A": "The impact of injected script execution",
+      "B": "The need for password hashing",
+      "C": "The size of SQL tables",
+      "D": "The number of HTTP requests to the database"
+    },
+    "correct_answer": "A",
+    "explanation": "CSP can restrict which scripts execute, reducing XSS impact when configured well."
+  },
+  {
+    "id": "websec-l2-006",
+    "topic": "XSS",
+    "difficulty": "medium",
+    "type": "multiple_choice",
+    "question": "A comments feature stores user input and renders it to everyone. What is the key XSS risk?",
+    "options": {
+      "A": "Stored XSS affecting many visitors",
+      "B": "Only reflected XSS affecting one request",
+      "C": "No XSS risk because comments are public",
+      "D": "Only server-side request forgery"
+    },
+    "correct_answer": "A",
+    "explanation": "Persisted untrusted content can execute repeatedly for future viewers."
+  },
+  {
+    "id": "websec-l2-007",
+    "topic": "Authentication Flaws",
+    "difficulty": "medium",
+    "type": "multiple_choice",
+    "question": "Why should password reset tokens expire quickly?",
+    "options": {
+      "A": "To limit the window if the token is leaked",
+      "B": "To make passwords shorter",
+      "C": "To avoid using HTTPS",
+      "D": "To let users share accounts"
+    },
+    "correct_answer": "A",
+    "explanation": "Short-lived reset tokens reduce the time an attacker can use a stolen token."
+  },
+  {
+    "id": "websec-l2-008",
+    "topic": "Authentication Flaws",
+    "difficulty": "medium",
+    "type": "multiple_choice",
+    "question": "Which login control helps slow password spraying?",
+    "options": {
+      "A": "Rate limiting by account and IP",
+      "B": "Returning valid usernames",
+      "C": "Using GET for passwords",
+      "D": "Removing audit logs"
+    },
+    "correct_answer": "A",
+    "explanation": "Rate limiting and throttling make large-scale guessing slower and more detectable."
+  },
+  {
+    "id": "websec-l2-009",
+    "topic": "Authentication Flaws",
+    "difficulty": "medium",
+    "type": "multiple_choice",
+    "question": "What is session fixation?",
+    "options": {
+      "A": "Forcing a victim to use an attacker-known session ID",
+      "B": "Hashing a password with a salt",
+      "C": "Compressing a JWT",
+      "D": "Rotating logs every day"
+    },
+    "correct_answer": "A",
+    "explanation": "Session fixation abuses a known session identifier that is not regenerated after login."
+  },
+  {
+    "id": "websec-l2-010",
+    "topic": "SQL Injection",
+    "difficulty": "medium",
+    "type": "multiple_choice",
+    "question": "Which response best handles database errors in production?",
+    "options": {
+      "A": "Show full SQL query and stack trace",
+      "B": "Return a generic error and log details server-side",
+      "C": "Email the SQL password to the user",
+      "D": "Ignore all exceptions"
+    },
+    "correct_answer": "B",
+    "explanation": "Detailed SQL errors can help attackers refine injection attempts."
+  },
+  {
+    "id": "websec-l2-011",
+    "topic": "XSS",
+    "difficulty": "medium",
+    "type": "multiple_choice",
+    "question": "Which cookie attribute helps reduce CSRF but does not replace XSS protection?",
+    "options": {
+      "A": "SameSite",
+      "B": "Max-Age=0 only",
+      "C": "Path=/admin always",
+      "D": "Domain=*"
+    },
+    "correct_answer": "A",
+    "explanation": "SameSite limits cross-site cookie sending, but XSS can still execute inside the trusted site."
+  },
+  {
+    "id": "websec-l2-012",
+    "topic": "Authentication Flaws",
+    "difficulty": "medium",
+    "type": "multiple_choice",
+    "question": "After successful login, a secure app should usually:",
+    "options": {
+      "A": "Regenerate the session identifier",
+      "B": "Keep the anonymous session ID forever",
+      "C": "Put the password in localStorage",
+      "D": "Disable TLS"
+    },
+    "correct_answer": "A",
+    "explanation": "Regenerating the session ID helps prevent session fixation."
+  }
+]

@@ -1,0 +1,182 @@
+[
+  {
+    "id": "websec-l1-001",
+    "topic": "SQL Injection",
+    "difficulty": "easy",
+    "type": "multiple_choice",
+    "question": "Which input is most suspicious in a login form username field?",
+    "options": {
+      "A": "alice@example.com",
+      "B": "' OR '1'='1",
+      "C": "alice_smith",
+      "D": "Alice Smith"
+    },
+    "correct_answer": "B",
+    "explanation": "The payload tries to alter the SQL WHERE clause so the condition is always true."
+  },
+  {
+    "id": "websec-l1-002",
+    "topic": "SQL Injection",
+    "difficulty": "easy",
+    "type": "multiple_choice",
+    "question": "What is the main defense against SQL injection?",
+    "options": {
+      "A": "Parameterized queries",
+      "B": "Hiding database errors with CSS",
+      "C": "Using shorter passwords",
+      "D": "Renaming database tables"
+    },
+    "correct_answer": "A",
+    "explanation": "Parameterized queries separate SQL code from user-supplied data."
+  },
+  {
+    "id": "websec-l1-003",
+    "topic": "SQL Injection",
+    "difficulty": "easy",
+    "type": "multiple_choice",
+    "question": "Why is string concatenation risky when building SQL queries?",
+    "options": {
+      "A": "It always makes queries slower",
+      "B": "It can mix untrusted input with SQL code",
+      "C": "It prevents database backups",
+      "D": "It encrypts values incorrectly"
+    },
+    "correct_answer": "B",
+    "explanation": "Concatenating user input directly into SQL can let attackers change query logic."
+  },
+  {
+    "id": "websec-l1-004",
+    "topic": "XSS",
+    "difficulty": "easy",
+    "type": "multiple_choice",
+    "question": "What does XSS usually allow an attacker to run?",
+    "options": {
+      "A": "SQL queries on the database server",
+      "B": "JavaScript in another user's browser",
+      "C": "Linux kernel modules",
+      "D": "Password hashing algorithms"
+    },
+    "correct_answer": "B",
+    "explanation": "Cross-site scripting injects script into pages viewed by other users."
+  },
+  {
+    "id": "websec-l1-005",
+    "topic": "XSS",
+    "difficulty": "easy",
+    "type": "multiple_choice",
+    "question": "Which output handling practice helps prevent reflected XSS?",
+    "options": {
+      "A": "HTML-encode untrusted output",
+      "B": "Store passwords in cookies",
+      "C": "Disable server logs",
+      "D": "Use HTTP instead of HTTPS"
+    },
+    "correct_answer": "A",
+    "explanation": "Encoding turns special characters into safe text instead of executable markup."
+  },
+  {
+    "id": "websec-l1-006",
+    "topic": "XSS",
+    "difficulty": "easy",
+    "type": "multiple_choice",
+    "question": "Which value looks like a basic XSS payload?",
+    "options": {
+      "A": "London",
+      "B": "42",
+      "C": "<script>alert(1)</script>",
+      "D": "blue-shirt"
+    },
+    "correct_answer": "C",
+    "explanation": "The script tag is a classic attempt to execute JavaScript in the browser."
+  },
+  {
+    "id": "websec-l1-007",
+    "topic": "Authentication Flaws",
+    "difficulty": "easy",
+    "type": "multiple_choice",
+    "question": "Which password storage method is safest?",
+    "options": {
+      "A": "Plain text",
+      "B": "Base64 encoding",
+      "C": "A slow salted password hash",
+      "D": "Reversible encryption with a hard-coded key"
+    },
+    "correct_answer": "C",
+    "explanation": "Passwords should be stored with a password hashing algorithm designed to resist cracking."
+  },
+  {
+    "id": "websec-l1-008",
+    "topic": "Authentication Flaws",
+    "difficulty": "easy",
+    "type": "multiple_choice",
+    "question": "What does multi-factor authentication add?",
+    "options": {
+      "A": "A second proof of identity",
+      "B": "A faster database",
+      "C": "A public password list",
+      "D": "A way to skip login"
+    },
+    "correct_answer": "A",
+    "explanation": "MFA requires another factor such as a device, code, or biometric proof."
+  },
+  {
+    "id": "websec-l1-009",
+    "topic": "Authentication Flaws",
+    "difficulty": "easy",
+    "type": "multiple_choice",
+    "question": "Which session cookie setting helps protect cookies from JavaScript theft?",
+    "options": {
+      "A": "HttpOnly",
+      "B": "font-weight",
+      "C": "Cache-Control: public",
+      "D": "X-Powered-By"
+    },
+    "correct_answer": "A",
+    "explanation": "HttpOnly prevents client-side JavaScript from reading the cookie."
+  },
+  {
+    "id": "websec-l1-010",
+    "topic": "SQL Injection",
+    "difficulty": "easy",
+    "type": "multiple_choice",
+    "question": "Which SQL injection impact is most realistic?",
+    "options": {
+      "A": "Unauthorized data access",
+      "B": "Improved page speed",
+      "C": "Automatic TLS renewal",
+      "D": "Better image compression"
+    },
+    "correct_answer": "A",
+    "explanation": "SQL injection can expose, modify, or delete data without authorization."
+  },
+  {
+    "id": "websec-l1-011",
+    "topic": "XSS",
+    "difficulty": "easy",
+    "type": "multiple_choice",
+    "question": "Stored XSS is dangerous because the payload is:",
+    "options": {
+      "A": "Saved by the application and shown later",
+      "B": "Only visible to the attacker",
+      "C": "Blocked by all browsers automatically",
+      "D": "Limited to database administrators"
+    },
+    "correct_answer": "A",
+    "explanation": "Stored XSS persists in application data and can execute whenever victims view it."
+  },
+  {
+    "id": "websec-l1-012",
+    "topic": "Authentication Flaws",
+    "difficulty": "easy",
+    "type": "multiple_choice",
+    "question": "A login page should respond to wrong passwords with:",
+    "options": {
+      "A": "The correct password hint",
+      "B": "A generic error message",
+      "C": "The user's password hash",
+      "D": "A list of valid usernames"
+    },
+    "correct_answer": "B",
+    "explanation": "Generic errors reduce account enumeration risk."
+  }
+]

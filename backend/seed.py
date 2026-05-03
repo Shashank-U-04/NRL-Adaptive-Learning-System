@@ -1,5 +1,5 @@
 """
-NRL 2.0 — Database Seeder
+NRL Adaptive Learning System — Database Seeder
 
 Seeds 3 CS topics and 20 real questions.
 Run:  python -m backend.seed
