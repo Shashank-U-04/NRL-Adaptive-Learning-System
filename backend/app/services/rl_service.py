@@ -1,24 +1,29 @@
 """
-NRL 2.0 — RL Recommendation Service
+NRL Adaptive Learning System — RL Recommendation Service
 
-Hybrid engine:
-  - Loads trained Q-table from trained_agent.pkl (if available)
-  - Falls back to rule-based adaptive difficulty
-  - 70% deterministic safety rules, 30% Q-table policy
-  - Every recommendation includes an explanation string
+Hybrid adaptive engine:
+  1. Safety rules always checked first (deterministic override)
+  2. Neural DQN policy if model file is present
+  3. Rule-based fallback if DQN unavailable
+
+Rich state vector (7 features) + explicit reward function per architecture plan.
 """
 
 import logging
-import pickle
-import random
-import sys
 from pathlib import Path
 
-from backend.app.core.config import RL_MODEL_PATH, RL_EXPLORATION_RATE
+from backend.app.core.config import RL_MODEL_PATH
 
-logger = logging.getLogger(__name__)
+try:
+    import torch
+    from backend.app.ml.dqn_model import DQN, encode_state
+    TORCH_AVAILABLE = True
+except (ImportError, OSError):
+    TORCH_AVAILABLE = False
 
-# ── RL Config (from original prototype) ─────────────────
+logger = logging.getLogger("nrl.rl")
+
+# ── Action Space ─────────────────────────────────────────
 ACTIONS = {
     0: "Present_Easy_Question",
     1: "Present_Medium_Question",
@@ -30,158 +35,163 @@ ACTIONS = {
 }
 ACTION_INDICES = {v: k for k, v in ACTIONS.items()}
 
-STATE_FIELDS = [
-    "knowledge_level", "current_topic", "question_difficulty",
-    "consecutive_correct", "consecutive_wrong", "engagement_score",
-]
-
 
 class RLService:
     """
-    Production RL recommendation service.
-    Loads the pre-trained Q-table if available, otherwise uses pure rules.
+    Production Neural RL recommendation service.
+    Falls back gracefully when PyTorch or trained weights are unavailable.
     """
 
-    def __init__(self):
-        self.q_table: dict = {}
+    def __init__(self) -> None:
+        self.model = None
         self.has_model = False
-        self._load_model()
+        self.device = None
+
+        if TORCH_AVAILABLE:
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            self._load_model()
+        else:
+            logger.warning("PyTorch unavailable — using rule-based adaptive engine.")
 
     def _load_model(self) -> None:
-        """Load pre-trained Q-table from pickle file."""
         model_path = Path(RL_MODEL_PATH)
-        if model_path.exists():
-            try:
-                with open(model_path, "rb") as f:
-                    self.q_table = pickle.load(f)
-                self.has_model = True
-                num_states = len(self.q_table)
-                non_zero = sum(1 for qv in self.q_table.values() for q in qv if q != 0.0)
-                logger.info(f"RL model loaded: {num_states} states, {non_zero} non-zero Q-values")
-            except Exception as e:
-                logger.warning(f"Failed to load RL model: {e} — using rule-based fallback")
-        else:
-            logger.info(f"No trained model at {model_path} — using rule-based adaptive engine")
+        if not model_path.exists():
+            logger.warning(f"No DQN weights at {model_path} — using rule-based engine.")
+            return
+        try:
+            self.model = DQN(input_size=7, hidden_size=128, output_size=7)
+            self.model.load_state_dict(
+                torch.load(model_path, map_location=self.device, weights_only=True)
+            )
+            self.model.to(self.device)
+            self.model.eval()
+            self.has_model = True
+            logger.info(f"DQN model loaded from {model_path} on {self.device}.")
+        except Exception as exc:
+            logger.error(f"Failed to load DQN model: {exc} — falling back to rules.")
+
+    # ── Public interface ──────────────────────────────────
 
     def recommend_action(self, state: dict) -> tuple[str, float, str]:
-        """
-        Recommend the next teaching action.
+        """Return (action_name, confidence, explanation)."""
 
-        Returns: (action_name, confidence, explanation)
-        """
-        # Phase 1: Deterministic safety rules (always checked first)
-        rule_action, rule_reason = self._apply_rules(state)
+        # Phase 1: Safety rules (always override)
+        rule_action, rule_reason = self._apply_safety_rules(state)
         if rule_action is not None:
-            return (ACTIONS[rule_action], 0.95, f"[Rule] {rule_reason}")
+            return ACTIONS[rule_action], 0.95, f"[Safety Rule] {rule_reason}"
 
-        # Phase 2: Q-table policy (if model is available)
+        # Phase 2: DQN inference
         if self.has_model:
-            state_tuple = self._dict_to_tuple(state)
-            if state_tuple in self.q_table:
-                q_values = self.q_table[state_tuple]
-                max_q = max(q_values)
-                best_actions = [i for i, q in enumerate(q_values) if q == max_q]
-                q_action = random.choice(best_actions)
+            try:
+                return self._dqn_inference(state)
+            except Exception as exc:
+                logger.error(f"DQN inference failed: {exc} — falling back to rules.")
 
-                q_range = max(q_values) - min(q_values) if q_values else 0.0
-                confidence = min(0.9, 0.5 + (q_range / 50.0))
-                explanation = self._explain_q_action(q_action, state, q_values)
-                return (ACTIONS[q_action], round(confidence, 2), explanation)
-
-        # Phase 3: Rule-based fallback
-        fallback_action, fallback_reason = self._fallback_rules(state)
-        return (ACTIONS[fallback_action], 0.7, f"[Adaptive] {fallback_reason}")
-
-    def _apply_rules(self, state: dict) -> tuple[int | None, str]:
-        """Safety rules that override everything."""
-        kl = state["knowledge_level"]
-        cc = state["consecutive_correct"]
-        cw = state["consecutive_wrong"]
-        eng = state["engagement_score"]
-
-        # Rule 1: Too many wrong → easier question
-        if cw >= 2:
-            if kl == 0:
-                return 0, f"Student has {cw} wrong answers at Beginner — giving Easy question to rebuild confidence"
-            return max(0, kl - 1), f"Student struggling with {cw} wrong answers — reducing difficulty"
-
-        # Rule 2: High streak → increase difficulty
-        if cc >= 4 and kl < 2:
-            return min(2, kl + 1), f"Student answered {cc} consecutive correct — increasing challenge"
-
-        # Rule 3: Engagement critically low
-        if eng == 0:
-            if cw >= 1:
-                return ACTION_INDICES["Give_Hint"], "Engagement is Low + wrong answer — providing hint to re-engage"
-            return 0, "Engagement is Low — presenting Easy question to rebuild motivation"
-
-        # Rule 4: Mastered all, high engagement → end session on a high note
-        if cc >= 5 and eng == 2 and state["current_topic"] == 2:
-            return ACTION_INDICES["End_Session"], "Student mastered all topics with High engagement — ending successfully"
-
-        # Rule 5: Ready for topic progression
-        if cc >= 3 and eng >= 1 and state["current_topic"] < 2:
-            return ACTION_INDICES["Move_To_Next_Topic"], f"Student has {cc} correct with good engagement — progressing to next topic"
-
-        return None, ""
-
-    def _fallback_rules(self, state: dict) -> tuple[int, str]:
-        """Pure rule-based adaptive difficulty when no Q-table is available."""
-        kl = state["knowledge_level"]
-        cc = state["consecutive_correct"]
-        cw = state["consecutive_wrong"]
-
-        # Match difficulty to knowledge level
-        if kl == 0:
-            if cc >= 2:
-                return 1, "Beginner getting comfortable — trying Medium question"
-            return 0, "Matching Easy difficulty to Beginner knowledge level"
-        elif kl == 1:
-            if cc >= 2:
-                return 2, "Intermediate on a streak — trying Hard question"
-            if cw >= 1:
-                return 0, "Intermediate struggled — stepping back to Easy"
-            return 1, "Matching Medium difficulty to Intermediate level"
-        else:
-            if cw >= 1:
-                return 1, "Advanced got one wrong — stepping back to Medium"
-            return 2, "Matching Hard difficulty to Advanced knowledge level"
-
-    def _explain_q_action(self, action: int, state: dict, q_values: list) -> str:
-        """Generate explanation for Q-table decisions."""
-        action_name = ACTIONS[action].replace("_", " ")
-        kl_names = {0: "Beginner", 1: "Intermediate", 2: "Advanced"}
-        eng_names = {0: "Low", 1: "Medium", 2: "High"}
-
-        kl = state["knowledge_level"]
-        cc = state["consecutive_correct"]
-        eng = state["engagement_score"]
-        q_val = q_values[action] if action < len(q_values) else 0
-
-        return (
-            f"[AI] Recommended {action_name} — "
-            f"student is {kl_names.get(kl, 'Unknown')} level with {cc} correct streak "
-            f"and {eng_names.get(eng, 'Unknown')} engagement "
-            f"(Q-value: {q_val:.2f})"
-        )
+        # Phase 3: Heuristic fallback
+        fb_action, fb_reason = self._heuristic_fallback(state)
+        return ACTIONS[fb_action], 0.70, f"[Heuristic] {fb_reason}"
 
     @staticmethod
-    def _dict_to_tuple(state: dict) -> tuple:
-        return tuple(state[f] for f in STATE_FIELDS)
+    def calculate_reward(
+        is_correct: bool,
+        is_improvement: bool = False,
+        is_repeated_mistake: bool = False,
+        lab_success: bool = False,
+    ) -> float:
+        """
+        Deterministic reward function per architecture plan:
+          +1.0  correct answer
+          +0.5  improvement trend
+          -0.5  repeated mistake
+          +0.7  lab success
+        """
+        reward = 0.0
+        if is_correct:
+            reward += 1.0
+        if is_improvement:
+            reward += 0.5
+        if is_repeated_mistake:
+            reward -= 0.5
+        if lab_success:
+            reward += 0.7
+        return reward
 
     @staticmethod
     def initial_state() -> dict:
+        """Cold-start beginner profile."""
         return {
-            "knowledge_level": 0,
-            "current_topic": 0,
-            "question_difficulty": 0,
-            "consecutive_correct": 0,
-            "consecutive_wrong": 0,
-            "engagement_score": 1,
+            "quiz_accuracy": 0.5,
+            "mcq_accuracy": 0.5,
+            "lab_success_rate": 0.5,
+            "recent_trend": "stable",
+            "attempts_count": 0,
+            "avg_response_time": 10.0,
+            "topic_confidence": 0.5,
         }
 
+    # ── Private helpers ───────────────────────────────────
 
-# ── Singleton ────────────────────────────────────────────
+    def _apply_safety_rules(self, state: dict) -> tuple[int | None, str]:
+        qa = state.get("quiz_accuracy", 0.5)
+        trend = state.get("recent_trend", "stable")
+        tc = state.get("topic_confidence", 0.5)
+
+        if trend == "declining" and qa < 0.4:
+            return (
+                ACTION_INDICES["Present_Easy_Question"],
+                "Performance declining with <40% accuracy — resetting to Easy to rebuild confidence",
+            )
+        if qa > 0.9 and tc > 0.85:
+            return (
+                ACTION_INDICES["Move_To_Next_Topic"],
+                "Accuracy >90% and high confidence — advancing to next topic",
+            )
+        return None, ""
+
+    def _dqn_inference(self, state: dict) -> tuple[str, float, str]:
+        with torch.no_grad():
+            tensor = encode_state(state).to(self.device)
+            q_values = self.model(tensor)
+
+            # Action masking: prevent topic advancement if confidence is low
+            tc = state.get("topic_confidence", 0.5)
+            if tc < 0.5:
+                q_values[ACTION_INDICES["Move_To_Next_Topic"]] = -1e9
+
+            best_action = int(q_values.argmax().item())
+
+            # Scale-invariant confidence
+            sorted_q, _ = torch.sort(q_values, descending=True)
+            top1, top2 = sorted_q[0].item(), sorted_q[1].item()
+            confidence = min(1.0, max(0.0, (top1 - top2) / (abs(top1) + 1e-6)))
+
+        explanation = self._explain(best_action, state, confidence)
+        return ACTIONS[best_action], round(confidence, 2), explanation
+
+    def _heuristic_fallback(self, state: dict) -> tuple[int, str]:
+        qa = state.get("quiz_accuracy", 0.5)
+        ls = state.get("lab_success_rate", 0.5)
+
+        if qa < 0.4:
+            return ACTION_INDICES["Present_Easy_Question"], "Low accuracy — starting with Easy"
+        if qa < 0.75:
+            if ls < 0.5:
+                return ACTION_INDICES["Give_Hint"], "Struggling with labs — providing a hint"
+            return ACTION_INDICES["Present_Medium_Question"], "Moderate accuracy — Medium difficulty"
+        return ACTION_INDICES["Present_Hard_Question"], "High accuracy — challenging with Hard"
+
+    def _explain(self, action: int, state: dict, confidence: float) -> str:
+        name = ACTIONS[action].replace("_", " ")
+        qa = state.get("quiz_accuracy", 0.0)
+        trend = state.get("recent_trend", "stable")
+        return (
+            f"[Neural DQN] {name} — "
+            f"{qa*100:.0f}% accuracy, {trend} trend "
+            f"(confidence {confidence*100:.1f}%)"
+        )
+
+
+# ── Singleton ─────────────────────────────────────────────
 _rl_service: RLService | None = None
 
 
