@@ -1,50 +1,56 @@
 """
-NRL 2.0 — SQLite Database Engine
+NRL Adaptive Learning System — Async PostgreSQL Database Engine
 
-Async SQLAlchemy 2.0 with aiosqlite.
-Creates database.db in the project root.
+Uses SQLAlchemy 2.x with asyncpg driver and connection pooling.
 """
 
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy import event
+import logging
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.orm import declarative_base
 
 from backend.app.core.config import DATABASE_URL
 
+logger = logging.getLogger("nrl.database")
 
+# ── Engine with connection pooling ────────────────────────
 engine = create_async_engine(
     DATABASE_URL,
-    echo=False,
-    connect_args={"check_same_thread": False},
+    echo=False,           # Set True to log all SQL (debug only)
+    pool_size=10,
+    max_overflow=20,
+    pool_pre_ping=True,   # Detect stale connections
+    pool_recycle=3600,    # Recycle connections every hour
 )
 
-async_session_factory = async_sessionmaker(
-    engine,
+# ── Session factory ───────────────────────────────────────
+AsyncSessionLocal = async_sessionmaker(
+    bind=engine,
     class_=AsyncSession,
     expire_on_commit=False,
+    autocommit=False,
+    autoflush=False,
 )
 
-
-class Base(DeclarativeBase):
-    pass
+Base = declarative_base()
 
 
-async def get_db():
-    """FastAPI dependency — yields an async DB session."""
-    async with async_session_factory() as session:
+# ── Dependency ────────────────────────────────────────────
+async def get_db() -> AsyncSession:  # type: ignore[return]
+    async with AsyncSessionLocal() as session:
         try:
             yield session
             await session.commit()
         except Exception:
             await session.rollback()
             raise
+        finally:
+            await session.close()
 
 
-async def init_db():
-    """Create all tables (run on startup)."""
+# ── Table creation ────────────────────────────────────────
+async def init_db() -> None:
+    """Create all tables if they don't already exist."""
+    from backend.app.models.models import Base as ModelsBase  # noqa: F401 — registers metadata
     async with engine.begin() as conn:
-        # Enable foreign keys for SQLite
-        await conn.execute(
-            __import__("sqlalchemy").text("PRAGMA foreign_keys = ON")
-        )
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(ModelsBase.metadata.create_all)
+    logger.info("Database tables verified/created successfully.")
