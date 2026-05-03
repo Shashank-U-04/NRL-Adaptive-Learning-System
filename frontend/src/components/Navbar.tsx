@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { motion } from "framer-motion";
-import { Brain, LogOut, LayoutDashboard, BarChart3, Trophy, User, Menu, X, Play } from "lucide-react";
+import { Brain, LogOut, LayoutDashboard, BarChart3, Trophy, User, Menu, X, Play, BookOpen } from "lucide-react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -16,6 +16,7 @@ export default function Navbar() {
 
   const navLinks = [
     { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
+    { href: "/learning", icon: BookOpen, label: "Learning" },
     { href: "/session", icon: Play, label: "Quiz" },
     { href: "/analytics", icon: BarChart3, label: "Analytics" },
     { href: "/leaderboard", icon: Trophy, label: "Leaderboard" },
@@ -32,7 +33,7 @@ export default function Navbar() {
             <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: "var(--gradient-primary)" }}>
               <Brain className="w-5 h-5 text-white" />
             </div>
-            <span className="text-lg font-bold">NRL <span style={{ color: "var(--accent-secondary)" }}>2.0</span></span>
+            <span className="text-lg font-bold">NRL Adaptive Learning System</span>
           </Link>
 
           <div className="hidden md:flex items-center gap-5">

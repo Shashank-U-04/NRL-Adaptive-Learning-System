@@ -1,5 +1,5 @@
 /**
- * NRL 2.0 — API Client
+ * NRL Adaptive Learning System — API Client
  *
  * Centralized fetch wrapper with JWT auto-refresh.
  * No Redis, no Docker — connects to local FastAPI on port 8000.
@@ -105,12 +105,12 @@ export const authApi = {
 
 // ── Session API ─────────────────────────────────────────
 export const sessionApi = {
-  start: (topicId?: string) =>
+  start: (topic?: string) =>
     apiFetch<{
       session_id: string; initial_state: Record<string, number>;
       first_action: string; explanation: string; confidence: number;
       question: QuestionPayload | null;
-    }>("/sessions/start", { method: "POST", body: JSON.stringify({ topic_id: topicId || null }) }),
+    }>("/sessions/start", { method: "POST", body: JSON.stringify({ topic: topic || null, topic_id: topic || null }) }),
 
   answer: (data: { session_id: string; question_id: string; selected_answer: string; time_taken_seconds: number }) =>
     apiFetch<{
@@ -164,7 +164,7 @@ export const leaderboardApi = {
 // ── Types ───────────────────────────────────────────────
 export interface QuestionPayload {
   id: string; text: string; options: Record<string, string>;
-  difficulty: string; topic_name: string; hint_available: boolean;
+  difficulty: string; topic_name: string; hint_available: boolean; source?: string;
 }
 
 export { ApiError };
