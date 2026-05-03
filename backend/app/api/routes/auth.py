@@ -1,5 +1,5 @@
 """
-NRL 2.0 — Auth Router
+NRL Adaptive Learning System — Auth Router
 
 POST /auth/register, /auth/login, /auth/refresh, GET /auth/me, PUT /auth/profile
 """
