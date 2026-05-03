@@ -1,0 +1,17 @@
+<svg width="960" height="360" viewBox="0 0 960 360" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="960" height="360" rx="24" fill="#10131f"/>
+  <rect x="55" y="95" width="180" height="120" rx="16" fill="#162033" stroke="#3B82F6" stroke-width="2"/>
+  <rect x="390" y="95" width="180" height="120" rx="16" fill="#17251d" stroke="#22C55E" stroke-width="2"/>
+  <rect x="725" y="95" width="180" height="120" rx="16" fill="#2a1f12" stroke="#F59E0B" stroke-width="2"/>
+  <path d="M245 155H370" stroke="#8EA4C8" stroke-width="4" stroke-linecap="round"/>
+  <path d="M580 155H705" stroke="#8EA4C8" stroke-width="4" stroke-linecap="round"/>
+  <path d="M365 143L382 155L365 167" stroke="#8EA4C8" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M700 143L717 155L700 167" stroke="#8EA4C8" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="145" y="142" text-anchor="middle" fill="#EAF1FF" font-family="Arial, sans-serif" font-size="20" font-weight="700">Browser</text>
+  <text x="145" y="172" text-anchor="middle" fill="#9FB3D1" font-family="Arial, sans-serif" font-size="15">Untrusted input</text>
+  <text x="480" y="142" text-anchor="middle" fill="#EAF1FF" font-family="Arial, sans-serif" font-size="20" font-weight="700">Backend</text>
+  <text x="480" y="172" text-anchor="middle" fill="#A7D8B4" font-family="Arial, sans-serif" font-size="15">Validate + bind</text>
+  <text x="815" y="142" text-anchor="middle" fill="#EAF1FF" font-family="Arial, sans-serif" font-size="20" font-weight="700">Database</text>
+  <text x="815" y="172" text-anchor="middle" fill="#F7C16E" font-family="Arial, sans-serif" font-size="15">Parameterized query</text>
+  <text x="480" y="286" text-anchor="middle" fill="#D7E4F8" font-family="Arial, sans-serif" font-size="18">Secure apps preserve trust boundaries before data reaches code, SQL, or HTML.</text>
+</svg>

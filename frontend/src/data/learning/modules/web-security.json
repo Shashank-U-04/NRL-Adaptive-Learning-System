@@ -1,0 +1,111 @@
+{
+  "topicId": "web-security",
+  "title": "Web Security: SQL Injection and Browser Attacks",
+  "description": "Practice how attackers abuse trust boundaries in web apps, then defend them with parameterization, encoding, and session controls.",
+  "difficulty": "easy",
+  "estimatedMinutes": 18,
+  "content": [
+    {
+      "id": "ws-text-1",
+      "type": "text",
+      "value": "A web application becomes vulnerable when it treats untrusted user input as trusted instructions. In this module, you will inspect login flows, reason about attacker decisions, and practice safe fixes through short checks and a simulated lab."
+    },
+    {
+      "id": "ws-image-1",
+      "type": "image",
+      "url": "/learning/web-security-flow.svg",
+      "alt": "Web request flow showing browser input, backend validation, and database query boundary",
+      "caption": "The dangerous moment is the boundary where user-controlled data enters code, queries, or rendered HTML."
+    },
+    {
+      "id": "ws-diagram-1",
+      "type": "diagram",
+      "title": "Input Trust Boundary",
+      "steps": [
+        "Browser sends user-controlled input",
+        "Server validates format and intent",
+        "Application uses parameterized database calls",
+        "Output is encoded for the browser context"
+      ]
+    },
+    {
+      "id": "ws-mcq-1",
+      "type": "mcq_inline",
+      "question": "A login query is built by concatenating the email and password directly into a SQL string. What is the most important fix?",
+      "options": [
+        "Hide SQL errors from users",
+        "Use parameterized queries for email and password",
+        "Rename the users table",
+        "Increase the password minimum length only"
+      ],
+      "answer": "Use parameterized queries for email and password",
+      "explanation": "Parameterized queries keep attacker-controlled input as data, so it cannot rewrite the SQL logic."
+    },
+    {
+      "id": "ws-scenario-1",
+      "type": "scenario",
+      "title": "Incident Triage",
+      "situation": "Support reports that several accounts were accessed without password reset emails. Logs show repeated login attempts containing quote characters and SQL comments.",
+      "decisions": [
+        {
+          "label": "Block the source IP only",
+          "feedback": "This may slow one attacker, but it does not fix the vulnerable query."
+        },
+        {
+          "label": "Patch the login query with parameters and review logs for affected accounts",
+          "feedback": "Best response: fix the root cause and scope the incident.",
+          "isBest": true
+        },
+        {
+          "label": "Disable all user accounts permanently",
+          "feedback": "This is disruptive and still does not identify or fix the flaw."
+        }
+      ]
+    },
+    {
+      "id": "ws-lab-1",
+      "type": "lab",
+      "labType": "sql_injection",
+      "title": "SQL Injection Login Bypass",
+      "instructions": "This is a safe simulation. Try an input that would comment out the password condition in a vulnerable login query.",
+      "input": "username",
+      "expectedOutput": "Login bypass successful",
+      "validationLogic": "contains:admin' --",
+      "successMessage": "Login bypass successful. In a real system, parameterized queries prevent this payload from changing query logic.",
+      "failureMessage": "The simulated login still checks the password. Try thinking about how SQL comments can remove the rest of a WHERE clause."
+    },
+    {
+      "id": "ws-mcq-2",
+      "type": "mcq_inline",
+      "question": "Which browser defense reduces the impact of a stolen XSS payload by restricting allowed script sources?",
+      "options": [
+        "Content Security Policy",
+        "Database indexing",
+        "Password salting",
+        "HTTP 404 pages"
+      ],
+      "answer": "Content Security Policy",
+      "explanation": "CSP can restrict where scripts may load from and whether inline scripts can execute."
+    },
+    {
+      "id": "ws-summary-1",
+      "type": "summary",
+      "title": "What to remember",
+      "bullets": [
+        "Treat all browser input as untrusted.",
+        "Use parameterized queries for SQL values.",
+        "Encode output for its exact browser context.",
+        "Use logs and incident review to validate the real blast radius."
+      ]
+    }
+  ],
+  "quiz": [
+    {
+      "question": "Which SQL injection mitigation provides code/data separation?",
+      "options": ["CSP", "Parameterized queries", "Longer table names", "Client-side validation only"],
+      "answer": "Parameterized queries",
+      "difficulty": "easy",
+      "topic": "web-security"
+    }
+  ]
+}
