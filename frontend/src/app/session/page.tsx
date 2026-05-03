@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { sessionApi, type QuestionPayload } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import Navbar from "@/components/Navbar";
 import {
-  Brain, Lightbulb, CheckCircle2, XCircle, Zap, Timer,
+  Brain, CheckCircle2, XCircle, Zap, Timer,
   ArrowRight, Trophy, Flame, Loader2, LogOut,
 } from "lucide-react";
 
@@ -25,6 +25,8 @@ interface SessionSummaryData {
 export default function SessionPage() {
   const { isAuthenticated, isLoading: authLoading, refreshUser } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const selectedTopic = searchParams.get("topic") || undefined;
 
   const [sessionState, setSessionState] = useState<SessionState>("idle");
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -38,9 +40,10 @@ export default function SessionPage() {
   const [reward, setReward] = useState(0);
   const [totalReward, setTotalReward] = useState(0);
   const [stepCount, setStepCount] = useState(0);
-  const [correctCount, setCorrectCount] = useState(0);
   const [summary, setSummary] = useState<SessionSummaryData | null>(null);
   const [error, setError] = useState("");
+  const [activeTopic, setActiveTopic] = useState("");
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const timerRef = useRef(0);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -48,10 +51,38 @@ export default function SessionPage() {
     if (!authLoading && !isAuthenticated) router.push("/login");
   }, [authLoading, isAuthenticated, router]);
 
+  useEffect(() => {
+    if (authLoading || !isAuthenticated || sessionId) return;
+    const pending = sessionStorage.getItem("nrl_pending_session");
+    if (!pending) return;
+
+    try {
+      const parsed = JSON.parse(pending);
+      const res = parsed.session;
+      if (res?.session_id && res?.question) {
+        setSessionId(res.session_id);
+        setQuestion(res.question);
+        setAiExplanation(res.explanation || "");
+        setActiveTopic(res.question.topic_name || "");
+        setStepCount(0);
+        setTotalReward(0);
+        setStreak(0);
+        timerRef.current = 0;
+        setElapsedSeconds(0);
+        setSessionState("active");
+      }
+    } finally {
+      sessionStorage.removeItem("nrl_pending_session");
+    }
+  }, [authLoading, isAuthenticated, sessionId]);
+
   // Timer
   useEffect(() => {
     if (sessionState === "active" || sessionState === "feedback") {
-      intervalRef.current = setInterval(() => { timerRef.current += 1; }, 1000);
+      intervalRef.current = setInterval(() => {
+        timerRef.current += 1;
+        setElapsedSeconds(timerRef.current);
+      }, 1000);
     }
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [sessionState]);
@@ -60,15 +91,16 @@ export default function SessionPage() {
     setSessionState("loading");
     setError("");
     try {
-      const res = await sessionApi.start();
+      const res = await sessionApi.start(selectedTopic);
       setSessionId(res.session_id);
       setQuestion(res.question);
+      setActiveTopic(res.question?.topic_name || "");
       setAiExplanation(res.explanation);
       setStepCount(0);
-      setCorrectCount(0);
       setTotalReward(0);
       setStreak(0);
       timerRef.current = 0;
+      setElapsedSeconds(0);
       setSessionState("active");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to start session");
@@ -97,7 +129,6 @@ export default function SessionPage() {
       setStreak(res.streak);
       setAiExplanation(res.action_explanation);
       setStepCount((prev) => prev + 1);
-      if (res.is_correct) setCorrectCount((prev) => prev + 1);
 
       if (res.session_done) {
         const summaryRes = await sessionApi.end(sessionId);
@@ -113,6 +144,7 @@ export default function SessionPage() {
         refreshUser();
       } else {
         setQuestion(res.next_question);
+        setActiveTopic(res.next_question?.topic_name || activeTopic);
         setSessionState("feedback");
       }
     } catch (err: unknown) {
@@ -168,6 +200,11 @@ export default function SessionPage() {
             {error && (
               <div className="mb-4 p-3 rounded-lg text-sm text-red-300"
                    style={{ background: "var(--error-glow)" }}>{error}</div>
+            )}
+            {selectedTopic && (
+              <p className="text-sm mb-4 capitalize" style={{ color: "var(--accent-secondary)" }}>
+                Selected bundle: {selectedTopic.replace(/-/g, " ")}
+              </p>
             )}
             <button onClick={startSession} className="btn-primary text-lg !py-4 !px-12 animate-pulse-glow">
               Start Session
@@ -234,10 +271,15 @@ export default function SessionPage() {
         {/* Session Header */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-4">
+            {activeTopic && (
+              <span className="text-sm font-medium" style={{ color: "var(--accent-secondary)" }}>
+                {activeTopic}
+              </span>
+            )}
             <div className="flex items-center gap-1.5">
               <Timer className="w-4 h-4" style={{ color: "var(--text-muted)" }} />
               <span className="text-sm font-mono" style={{ color: "var(--text-secondary)" }}>
-                {formatTime(timerRef.current)}
+                {formatTime(elapsedSeconds)}
               </span>
             </div>
             <div className="flex items-center gap-1.5">
