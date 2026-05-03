@@ -51,7 +51,7 @@ export default function LoginPage() {
             <Brain className="w-5 h-5 text-white" />
           </div>
           <span className="text-xl font-bold">
-            NRL <span style={{ color: "var(--accent-secondary)" }}>2.0</span>
+            NRL Adaptive Learning System
           </span>
         </div>
 

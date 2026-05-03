@@ -87,7 +87,7 @@ export default function LandingPage() {
 
           <p className="text-lg md:text-xl max-w-2xl mx-auto mb-10 leading-relaxed"
              style={{ color: "var(--text-secondary)" }}>
-            NRL 2.0 is an AI-powered adaptive learning platform that personalizes every session
+            NRL Adaptive Learning System is an adaptive learning system that personalizes every session
             to your knowledge level, pace, and engagement — just like a private tutor.
           </p>
 
@@ -135,7 +135,7 @@ export default function LandingPage() {
             className="text-center mb-16"
           >
             <h2 className="text-3xl md:text-4xl font-bold mb-4">
-              Why NRL 2.0?
+              Why NRL Adaptive Learning System?
             </h2>
             <p style={{ color: "var(--text-secondary)" }} className="text-lg max-w-xl mx-auto">
               Every feature is designed to maximize learning outcomes.
@@ -207,7 +207,7 @@ export default function LandingPage() {
         <div className="relative">
           <h2 className="text-3xl md:text-5xl font-bold mb-6">Ready to learn smarter?</h2>
           <p className="text-lg mb-8" style={{ color: "var(--text-secondary)" }}>
-            Join NRL 2.0 and experience AI-powered education.
+            Join NRL Adaptive Learning System and experience AI-powered education.
           </p>
           <Link href="/register" className="btn-primary text-lg !py-4 !px-12">
             Create Free Account
@@ -218,7 +218,7 @@ export default function LandingPage() {
       {/* ── Footer ────────────────────────────────────── */}
       <footer className="py-8 px-4 text-center" style={{ borderTop: "1px solid var(--border-glass)" }}>
         <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-          © 2026 NRL 2.0 — Built with Reinforcement Learning & ❤️
+          © 2026 NRL Adaptive Learning System — Built with Reinforcement Learning & ❤️
         </p>
       </footer>
     </div>
