@@ -38,7 +38,7 @@ async def student_dashboard(
 
     # Weak topics
     metric_result = await db.execute(
-        select(LearnerMetric, Topic.name)
+        select(LearnerMetric, Topic.title)
         .join(Topic, LearnerMetric.topic_id == Topic.id)
         .where(LearnerMetric.user_id == user.id)
         .order_by(LearnerMetric.mastery_score).limit(3)
@@ -86,7 +86,7 @@ async def topic_mastery(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        select(LearnerMetric, Topic.name)
+        select(LearnerMetric, Topic.title)
         .join(Topic, LearnerMetric.topic_id == Topic.id)
         .where(LearnerMetric.user_id == user.id)
         .order_by(desc(LearnerMetric.mastery_score))

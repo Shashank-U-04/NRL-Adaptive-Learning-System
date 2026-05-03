@@ -1,14 +1,27 @@
 import { NextResponse } from "next/server";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api/v1";
+import { mockModules } from "@/data/learning/mockModules";
 
 export async function GET() {
   try {
-    const res = await fetch(`${API_BASE}/learning/modules`);
-    const data = await res.json();
-    return NextResponse.json({ modules: data.data || data });
+    // In a real app, this would fetch from a database or backend API
+    const summaries = mockModules.map(m => ({
+      id: m.id,
+      title: m.title,
+      description: m.description,
+      difficulty: m.difficulty,
+      progress: m.progress || 0
+    }));
+
+    return NextResponse.json({
+      success: true,
+      data: { modules: summaries }
+    });
   } catch (error) {
     console.error("Failed to fetch modules:", error);
-    return NextResponse.json({ modules: [] }, { status: 500 });
+    return NextResponse.json({
+      success: false,
+      data: { modules: [] },
+      error: "Failed to fetch modules"
+    }, { status: 500 });
   }
 }

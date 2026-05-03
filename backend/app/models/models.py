@@ -132,6 +132,9 @@ class ModuleProgress(Base):
     user_id = Column(String, ForeignKey("users.id"), nullable=False)
     topic_id = Column(String(50), ForeignKey("topics.id"), nullable=False)
     is_completed = Column(Boolean, default=False)
+    completed_lessons = Column(JSONB, default=list)  # List of lesson IDs
+    completed_labs = Column(JSONB, default=list)     # List of lab IDs
+    quiz_scores = Column(JSONB, default=list)        # List of quiz score records
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (

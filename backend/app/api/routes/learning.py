@@ -16,6 +16,7 @@ Security:
 
 import re
 import logging
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -60,11 +61,92 @@ class LabSubmission(BaseModel):
     payload: str
 
 
-class CompleteModuleRequest(BaseModel):
+class ProgressUpdate(BaseModel):
     topic_id: str
+    lesson_id: str | None = None
+    lab_id: str | None = None
+    quiz_score: int | None = None
+    quiz_stats: dict | None = None
 
 
 # ── Routes ────────────────────────────────────────────────
+
+@router.get("/progress/{topic_id}")
+async def get_progress(
+    topic_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Fetch user progress for a specific topic."""
+    stmt = select(ModuleProgress).where(
+        ModuleProgress.user_id == user.id,
+        ModuleProgress.topic_id == topic_id,
+    )
+    progress = (await db.execute(stmt)).scalar_one_or_none()
+    
+    if not progress:
+        return {
+            "completed_lessons": [],
+            "completed_labs": [],
+            "quiz_scores": [],
+            "is_completed": False
+        }
+        
+    return {
+        "completed_lessons": progress.completed_lessons,
+        "completed_labs": progress.completed_labs,
+        "quiz_scores": progress.quiz_scores,
+        "is_completed": progress.is_completed
+    }
+
+
+@router.post("/progress/update")
+async def update_progress(
+    body: ProgressUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Update user progress (lessons, labs, or quiz scores)."""
+    stmt = select(ModuleProgress).where(
+        ModuleProgress.user_id == user.id,
+        ModuleProgress.topic_id == body.topic_id,
+    )
+    progress = (await db.execute(stmt)).scalar_one_or_none()
+
+    if not progress:
+        progress = ModuleProgress(
+            user_id=user.id,
+            topic_id=body.topic_id,
+            completed_lessons=[],
+            completed_labs=[],
+            quiz_scores=[]
+        )
+        db.add(progress)
+
+    if body.lesson_id and body.lesson_id not in progress.completed_lessons:
+        # Use a copy to trigger SQLAlchemy change detection for JSONB
+        progress.completed_lessons = list(set(progress.completed_lessons + [body.lesson_id]))
+        
+    if body.lab_id and body.lab_id not in progress.completed_labs:
+        progress.completed_labs = list(set(progress.completed_labs + [body.lab_id]))
+        
+    if body.quiz_score is not None:
+        new_score = {
+            "score": body.quiz_score,
+            "stats": body.quiz_stats,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        progress.quiz_scores = progress.quiz_scores + [new_score]
+        if body.quiz_score >= 80:
+            progress.is_completed = True
+
+    progress.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    return {"status": "success", "progress": {
+        "completed_lessons": progress.completed_lessons,
+        "completed_labs": progress.completed_labs,
+        "is_completed": progress.is_completed
+    }}
 
 @router.get("/modules")
 async def list_modules(
@@ -81,16 +163,19 @@ async def list_modules(
     )
     modules = (await db.execute(stmt)).scalars().all()
     return {
-        "data": [
-            {
-                "topic_id": m.topic_id,
-                "title": m.content.get("title", m.topic_id),
-                "difficulty": m.content.get("difficulty", 1),
-                "estimatedMinutes": m.content.get("estimatedMinutes", 5),
-                "is_ai_generated": m.is_ai_generated,
-            }
-            for m in modules
-        ],
+        "success": True,
+        "data": {
+            "modules": [
+                {
+                    "topic_id": m.topic_id,
+                    "title": m.content.get("title", m.topic_id),
+                    "difficulty": m.content.get("difficulty", 1),
+                    "estimatedMinutes": m.content.get("estimatedMinutes", 5),
+                    "is_ai_generated": m.is_ai_generated,
+                }
+                for m in modules
+            ]
+        },
         "limit": limit,
         "offset": offset,
     }
@@ -112,12 +197,12 @@ async def get_module(
     )
     module = (await db.execute(stmt)).scalar_one_or_none()
     if module:
-        return module.content
+        return {"success": True, "data": {"module": module.content}}
 
     # AI-generate (validates topic allowlist internally on topic creation)
     content = await generate_learning_module(topic_id, db)
     if content:
-        return content
+        return {"success": True, "data": {"module": content}}
 
     raise HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -219,30 +304,10 @@ async def submit_lab(
 
 
 @router.post("/complete", status_code=status.HTTP_200_OK)
-async def complete_module(
-    body: CompleteModuleRequest,
+async def complete_module_legacy(
+    body: ProgressUpdate, # Reuse ProgressUpdate for consistency
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Mark a learning module as completed for the authenticated user."""
-    await _validate_topic(body.topic_id, db)
-
-    stmt = select(ModuleProgress).where(
-        ModuleProgress.user_id == user.id,
-        ModuleProgress.topic_id == body.topic_id,
-    )
-    progress = (await db.execute(stmt)).scalar_one_or_none()
-
-    if progress:
-        progress.is_completed = True
-    else:
-        progress = ModuleProgress(
-            user_id=user.id,
-            topic_id=body.topic_id,
-            is_completed=True,
-        )
-        db.add(progress)
-
-    await db.commit()
-    logger.info(f"Module completed: user={user.id} topic={body.topic_id}")
-    return {"status": "completed", "topic_id": body.topic_id}
+    """Legacy endpoint for compatibility."""
+    return await update_progress(body, db, user)

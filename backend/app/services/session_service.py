@@ -107,10 +107,33 @@ class SessionService:
 
     # ── Public methods ────────────────────────────────────
 
+    async def _ensure_topic_exists(self, topic_id: str) -> str:
+        """Verify topic exists in DB or create it from default/slug."""
+        result = await self.db.execute(select(Topic).where(Topic.id == topic_id))
+        topic = result.scalar_one_or_none()
+
+        if topic:
+            return topic.id
+
+        # Auto-create if missing
+        new_topic = Topic(
+            id=topic_id,
+            title=topic_id.replace("-", " ").title(),
+        )
+        self.db.add(new_topic)
+        await self.db.flush()  # Use flush to get ID without full commit yet if nested
+        logger.info(f"[SESSION] Topic auto-created: {topic_id}")
+        print(f"[SESSION] Topic ensured: {topic_id}")
+        return new_topic.id
+
     async def start_session(
         self, user: User, topic: str | None = None
     ) -> StartSessionResponse:
         topic_slug = _normalize_topic(topic)
+        
+        # Ensure topic exists before session creation
+        await self._ensure_topic_exists(topic_slug)
+        
         state = self.rl.initial_state()
 
         # Create DB session row

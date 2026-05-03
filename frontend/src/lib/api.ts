@@ -1,11 +1,8 @@
 /**
  * NRL Adaptive Learning System — API Client
- *
- * Centralized fetch wrapper with JWT auto-refresh.
- * No Redis, no Docker — connects to local FastAPI on port 8000.
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 const API_PREFIX = "/api/v1";
 
 class ApiError extends Error {
@@ -105,12 +102,23 @@ export const authApi = {
 
 // ── Session API ─────────────────────────────────────────
 export const sessionApi = {
-  start: (topic?: string) =>
-    apiFetch<{
-      session_id: string; initial_state: Record<string, number>;
-      first_action: string; explanation: string; confidence: number;
-      question: QuestionPayload | null;
-    }>("/sessions/start", { method: "POST", body: JSON.stringify({ topic: topic || null, topic_id: topic || null }) }),
+  start: async (topic?: string) => {
+    // Call the local Next.js proxy instead of the backend directly
+    const token = getAccessToken();
+    const res = await fetch("/api/sessions/start", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ topic: topic || null, topic_id: topic || null }),
+    });
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({}));
+      throw new ApiError(res.status, errorData.error || "Failed to start session", errorData);
+    }
+    return res.json();
+  },
 
   answer: (data: { session_id: string; question_id: string; selected_answer: string; time_taken_seconds: number }) =>
     apiFetch<{
@@ -159,6 +167,35 @@ export const leaderboardApi = {
     rank: number; name: string; total_xp: number; accuracy: number;
     sessions_completed: number; knowledge_level: string;
   }>>(`/leaderboard?limit=${limit}`),
+};
+
+// ── Learning API ───────────────────────────────────────────
+export const learningApi = {
+  getModules: () => 
+    apiFetch<{ success: boolean; data: { modules: any[] }; error?: string }>("/learning/modules"),
+    
+  getModuleDetail: (id: string) =>
+    apiFetch<{ success: boolean; data: { module: any }; error?: string }>(`/learning/modules/${id}`),
+    
+  getProgress: (topicId: string) =>
+    apiFetch<{
+      completed_lessons: string[];
+      completed_labs: string[];
+      quiz_scores: any[];
+      is_completed: boolean;
+    }>(`/learning/progress/${topicId}`),
+    
+  updateProgress: (data: { 
+    topic_id: string; 
+    lesson_id?: string; 
+    lab_id?: string; 
+    quiz_score?: number; 
+    quiz_stats?: any 
+  }) =>
+    apiFetch<{ status: string; progress: any }>("/learning/progress/update", { 
+      method: "POST", 
+      body: JSON.stringify(data) 
+    }),
 };
 
 // ── Types ───────────────────────────────────────────────
