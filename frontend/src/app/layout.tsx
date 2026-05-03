@@ -9,7 +9,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "NRL 2.0 — AI-Powered Adaptive Learning",
+  title: "NRL Adaptive Learning System",
   description:
     "Personalized learning platform that adapts to your pace using Reinforcement Learning. Master any topic with AI-driven question selection, real-time feedback, and smart analytics.",
   keywords: ["adaptive learning", "AI tutor", "reinforcement learning", "EdTech", "personalized education"],
