@@ -1,5 +1,5 @@
 """
-NRL 2.0 — Session Router
+NRL Adaptive Learning System — Session Router
 
 POST /sessions/start, /sessions/answer, /sessions/end
 GET  /sessions/history
@@ -29,7 +29,7 @@ async def start_session(
     db: AsyncSession = Depends(get_db),
 ):
     service = SessionService(db)
-    return await service.start_session(user, data.topic_id)
+    return await service.start_session(user, data.topic or data.topic_id)
 
 
 @router.post("/answer", response_model=AnswerResponse)
