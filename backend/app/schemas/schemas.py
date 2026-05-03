@@ -1,5 +1,5 @@
 """
-NRL 2.0 — Pydantic Schemas
+NRL Adaptive Learning System — Pydantic Schemas
 
 All request/response models for the API.
 """
@@ -80,6 +80,7 @@ class UpdateProfileRequest(BaseModel):
 
 # ── Session / Quiz ───────────────────────────────────────
 class StartSessionRequest(BaseModel):
+    topic: str | None = None
     topic_id: str | None = None
 
 
@@ -90,6 +91,7 @@ class QuestionPayload(BaseModel):
     difficulty: str
     topic_name: str
     hint_available: bool
+    source: str = "dataset"
 
 
 class StartSessionResponse(BaseModel):
