@@ -1,5 +1,5 @@
 """
-NRL 2.0 — Leaderboard Router
+NRL Adaptive Learning System — Leaderboard Router
 
 GET /leaderboard — Global XP leaderboard
 """
