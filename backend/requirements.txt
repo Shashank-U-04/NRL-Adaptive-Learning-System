@@ -1,25 +1,29 @@
-# NRL 2.0 — Python Dependencies
-# Python 3.12+
+# ── Web Framework ──────────────────────────────────────────
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+python-multipart==0.0.9
 
-# Web Framework
-fastapi==0.115.12
-uvicorn[standard]==0.34.2
+# ── Database (PostgreSQL async) ────────────────────────────
+sqlalchemy[asyncio]==2.0.36
+asyncpg==0.30.0
+psycopg2-binary==2.9.10
+alembic==1.14.0
 
-# Database (SQLite)
-sqlalchemy==2.0.40
-aiosqlite==0.21.0
+# ── Redis ─────────────────────────────────────────────────
+redis[asyncio]==5.2.1
 
-# Auth
-python-jose[cryptography]==3.4.0
+# ── Auth ──────────────────────────────────────────────────
 passlib[bcrypt]==1.7.4
-python-multipart==0.0.20
+PyJWT==2.9.0
 
-# Validation
-pydantic==2.11.3
-email-validator==2.2.0
+# ── AI Integration ────────────────────────────────────────
+openai==1.58.1
+instructor==1.7.2
 
-# Environment
-python-dotenv==1.1.0
+# ── Validation & Settings ─────────────────────────────────
+pydantic[email]==2.10.4
+python-dotenv==1.0.1
 
-# AI Engine
-numpy==2.2.5
+# ── ML / RL Engine ────────────────────────────────────────
+torch==2.5.1
+numpy==1.26.4
