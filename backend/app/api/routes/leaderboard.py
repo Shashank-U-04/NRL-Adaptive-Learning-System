@@ -15,7 +15,7 @@ from backend.app.schemas.schemas import LeaderboardEntry
 router = APIRouter(prefix="/leaderboard", tags=["Leaderboard"])
 
 
-@router.get("/", response_model=list[LeaderboardEntry])
+@router.get("", response_model=list[LeaderboardEntry])
 async def get_leaderboard(limit: int = 50, db: AsyncSession = Depends(get_db)):
     """Global leaderboard ranked by total XP."""
     result = await db.execute(

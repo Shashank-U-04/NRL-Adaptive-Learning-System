@@ -1,202 +1,253 @@
 """
 NRL Adaptive Learning System — Database Seeder
 
-Seeds 3 CS topics and 20 real questions.
+Seeds cybersecurity topics + a starter question bank.
 Run:  python -m backend.seed
 """
 
 import asyncio
-import random
 
-from backend.app.core.database import init_db, async_session_factory
-from backend.app.models.models import Topic, Question
+from sqlalchemy import select, func
+
+from backend.app.core.database import init_db, AsyncSessionLocal
+from backend.app.models.models import Question, Topic
 
 
+# (id, title, description, order_index)
 TOPICS = [
-    {"name": "Data Structures", "description": "Arrays, Linked Lists, Trees, Graphs, Hash Maps, Stacks, Queues", "order_index": 0},
-    {"name": "Algorithms", "description": "Sorting, Searching, Dynamic Programming, Greedy, Graph Algorithms", "order_index": 1},
-    {"name": "Python Fundamentals", "description": "Syntax, OOP, Data Types, Decorators, GIL, Generators", "order_index": 2},
+    (
+        "web-security",
+        "Web Security",
+        "OWASP Top 10, XSS, CSRF, SQL injection, secure HTTP headers.",
+        0,
+    ),
+    (
+        "network-security",
+        "Network Security",
+        "TLS, segmentation, firewalls, intrusion detection, VPNs.",
+        1,
+    ),
+    (
+        "cryptography",
+        "Cryptography",
+        "Symmetric/asymmetric keys, hashing, signing, key management.",
+        2,
+    ),
+    (
+        "auth-and-iam",
+        "Authentication & IAM",
+        "MFA, SSO, OAuth, JWTs, role-based access control.",
+        3,
+    ),
+    (
+        "secure-coding",
+        "Secure Coding",
+        "Input validation, dependency scanning, secrets handling, OWASP ASVS.",
+        4,
+    ),
 ]
 
+
+# (topic_id, difficulty, text, options, correct_answer, explanation, hint)
 QUESTIONS = [
-    # ── Data Structures — Easy ────────────────────────
-    {"topic": "Data Structures", "difficulty": "easy",
-     "text": "What is the time complexity of accessing an element in an array by index?",
-     "options": {"A": "O(1)", "B": "O(n)", "C": "O(log n)", "D": "O(n²)"},
-     "correct_answer": "A",
-     "explanation": "Arrays provide constant-time O(1) access by index because elements are stored contiguously in memory.",
-     "hint": "Think about how arrays store elements in contiguous memory locations."},
-
-    {"topic": "Data Structures", "difficulty": "easy",
-     "text": "Which data structure follows the FIFO (First In, First Out) principle?",
-     "options": {"A": "Stack", "B": "Queue", "C": "Tree", "D": "Graph"},
-     "correct_answer": "B",
-     "explanation": "A Queue follows FIFO — the first element added is the first one removed.",
-     "hint": "Think of a line at a grocery store."},
-
-    {"topic": "Data Structures", "difficulty": "easy",
-     "text": "What does LIFO stand for in the context of stacks?",
-     "options": {"A": "Last In, First Out", "B": "Last In, Fastest Out", "C": "Linked In, First Out", "D": "Linear Input, Fixed Output"},
-     "correct_answer": "A",
-     "explanation": "LIFO means Last In, First Out — the most recently added element is removed first.",
-     "hint": "Think of a stack of plates."},
-
-    # ── Data Structures — Medium ──────────────────────
-    {"topic": "Data Structures", "difficulty": "medium",
-     "text": "What is the worst-case time complexity of searching in a binary search tree?",
-     "options": {"A": "O(1)", "B": "O(log n)", "C": "O(n)", "D": "O(n log n)"},
-     "correct_answer": "C",
-     "explanation": "In a skewed BST (essentially a linked list), search takes O(n). Balanced BSTs guarantee O(log n).",
-     "hint": "Consider what happens when the tree is completely unbalanced."},
-
-    {"topic": "Data Structures", "difficulty": "medium",
-     "text": "Which data structure is best for implementing a priority queue?",
-     "options": {"A": "Array", "B": "Linked List", "C": "Heap", "D": "Stack"},
-     "correct_answer": "C",
-     "explanation": "Heaps provide O(log n) insert and O(1) access to the min/max element.",
-     "hint": "This structure maintains a special ordering between parent and child nodes."},
-
-    # ── Data Structures — Hard ────────────────────────
-    {"topic": "Data Structures", "difficulty": "hard",
-     "text": "What is the amortized time complexity of inserting into a dynamic array (e.g., Python list)?",
-     "options": {"A": "O(1)", "B": "O(n)", "C": "O(log n)", "D": "O(n²)"},
-     "correct_answer": "A",
-     "explanation": "While occasional resizing costs O(n), the amortized cost per insertion is O(1) due to the doubling strategy.",
-     "hint": "Consider the doubling strategy and how resize cost is spread."},
-
-    {"topic": "Data Structures", "difficulty": "hard",
-     "text": "In a Red-Black tree, what is the maximum height relative to n nodes?",
-     "options": {"A": "log n", "B": "2 log(n+1)", "C": "n/2", "D": "√n"},
-     "correct_answer": "B",
-     "explanation": "Red-Black trees guarantee height ≤ 2·log₂(n+1), ensuring O(log n) operations.",
-     "hint": "Red-Black trees are a type of self-balancing BST."},
-
-    # ── Algorithms — Easy ─────────────────────────────
-    {"topic": "Algorithms", "difficulty": "easy",
-     "text": "What is the time complexity of linear search?",
-     "options": {"A": "O(1)", "B": "O(log n)", "C": "O(n)", "D": "O(n²)"},
-     "correct_answer": "C",
-     "explanation": "Linear search checks each element one by one, taking O(n) in the worst case.",
-     "hint": "You check every element from start to end."},
-
-    {"topic": "Algorithms", "difficulty": "easy",
-     "text": "Which sorting algorithm has the best average-case time complexity?",
-     "options": {"A": "Bubble Sort - O(n²)", "B": "Merge Sort - O(n log n)", "C": "Selection Sort - O(n²)", "D": "Insertion Sort - O(n²)"},
-     "correct_answer": "B",
-     "explanation": "Merge Sort consistently achieves O(n log n) through divide-and-conquer.",
-     "hint": "Think about divide-and-conquer algorithms."},
-
-    # ── Algorithms — Medium ───────────────────────────
-    {"topic": "Algorithms", "difficulty": "medium",
-     "text": "What technique does binary search use?",
-     "options": {"A": "Brute Force", "B": "Divide and Conquer", "C": "Dynamic Programming", "D": "Backtracking"},
-     "correct_answer": "B",
-     "explanation": "Binary search divides the search space in half at each step.",
-     "hint": "The search space is repeatedly halved."},
-
-    {"topic": "Algorithms", "difficulty": "medium",
-     "text": "What is the space complexity of merge sort?",
-     "options": {"A": "O(1)", "B": "O(log n)", "C": "O(n)", "D": "O(n²)"},
-     "correct_answer": "C",
-     "explanation": "Merge sort requires O(n) additional space for temporary arrays during merging.",
-     "hint": "Merging requires temporary storage for combined results."},
-
-    {"topic": "Algorithms", "difficulty": "medium",
-     "text": "What is the time complexity of Dijkstra's shortest path algorithm with a min-heap?",
-     "options": {"A": "O(V²)", "B": "O(V + E)", "C": "O((V + E) log V)", "D": "O(V·E)"},
-     "correct_answer": "C",
-     "explanation": "With a binary min-heap, Dijkstra runs in O((V + E) log V) time.",
-     "hint": "The priority queue operations dominate the runtime."},
-
-    # ── Algorithms — Hard ─────────────────────────────
-    {"topic": "Algorithms", "difficulty": "hard",
-     "text": "What is the time complexity of the Bellman-Ford algorithm?",
-     "options": {"A": "O(V log V)", "B": "O(V·E)", "C": "O(V²)", "D": "O(E log V)"},
-     "correct_answer": "B",
-     "explanation": "Bellman-Ford relaxes all E edges V-1 times, giving O(V·E). It handles negative weights unlike Dijkstra.",
-     "hint": "The algorithm iterates V-1 times, relaxing all edges each iteration."},
-
-    # ── Python — Easy ─────────────────────────────────
-    {"topic": "Python Fundamentals", "difficulty": "easy",
-     "text": "What is the output of: print(type([1, 2, 3]))?",
-     "options": {"A": "<class 'tuple'>", "B": "<class 'list'>", "C": "<class 'set'>", "D": "<class 'dict'>"},
-     "correct_answer": "B",
-     "explanation": "Square brackets [] create a list in Python.",
-     "hint": "Look at the brackets used — [] vs () vs {}."},
-
-    {"topic": "Python Fundamentals", "difficulty": "easy",
-     "text": "Which keyword is used to define a function in Python?",
-     "options": {"A": "func", "B": "function", "C": "def", "D": "define"},
-     "correct_answer": "C",
-     "explanation": "The 'def' keyword is used to define functions in Python.",
-     "hint": "It's a short, 3-letter keyword."},
-
-    # ── Python — Medium ───────────────────────────────
-    {"topic": "Python Fundamentals", "difficulty": "medium",
-     "text": "What is the difference between a list and a tuple in Python?",
-     "options": {"A": "Lists are immutable, tuples are mutable", "B": "Lists are mutable, tuples are immutable",
-                 "C": "There is no difference", "D": "Tuples can only store numbers"},
-     "correct_answer": "B",
-     "explanation": "Lists are mutable (can be changed), while tuples are immutable (fixed after creation).",
-     "hint": "Think about which one you can modify after creation."},
-
-    {"topic": "Python Fundamentals", "difficulty": "medium",
-     "text": "What does the 'yield' keyword do in Python?",
-     "options": {"A": "Terminates the function", "B": "Creates a generator function",
-                 "C": "Imports a module", "D": "Defines a class method"},
-     "correct_answer": "B",
-     "explanation": "The 'yield' keyword turns a function into a generator, allowing lazy iteration.",
-     "hint": "It's related to generators and lazy evaluation."},
-
-    # ── Python — Hard ─────────────────────────────────
-    {"topic": "Python Fundamentals", "difficulty": "hard",
-     "text": "What is a decorator in Python?",
-     "options": {"A": "A function that modifies another function's behavior", "B": "A class inheriting from another",
-                 "C": "A type of loop", "D": "A method to format strings"},
-     "correct_answer": "A",
-     "explanation": "Decorators wrap functions to extend their behavior without modifying source code. Used with @syntax.",
-     "hint": "Think of @property or @staticmethod."},
-
-    {"topic": "Python Fundamentals", "difficulty": "hard",
-     "text": "What does the GIL (Global Interpreter Lock) do in CPython?",
-     "options": {"A": "Prevents multiple threads from executing Python bytecode simultaneously",
-                 "B": "Locks global variables from modification",
-                 "C": "Manages memory allocation globally",
-                 "D": "Encrypts global data"},
-     "correct_answer": "A",
-     "explanation": "The GIL ensures only one thread executes Python bytecode at a time, limiting CPU-bound parallelism.",
-     "hint": "It's related to threading and concurrency limitations."},
+    # ── web-security ─────────────────────────────────────
+    (
+        "web-security",
+        "easy",
+        "Which HTTP header instructs browsers to only load resources over HTTPS?",
+        {"A": "Content-Type", "B": "Strict-Transport-Security", "C": "Cache-Control", "D": "X-Frame-Options"},
+        "B",
+        "HSTS forces HTTPS-only loading, defeating downgrade attacks.",
+        "It starts with 'Strict'.",
+    ),
+    (
+        "web-security",
+        "medium",
+        "What kind of XSS persists in the database and is rendered to other users later?",
+        {"A": "Reflected XSS", "B": "DOM-based XSS", "C": "Stored XSS", "D": "Self-XSS"},
+        "C",
+        "Stored XSS is saved server-side and replayed to anyone visiting the affected page.",
+        "Think about persistence vs. one-shot.",
+    ),
+    (
+        "web-security",
+        "hard",
+        "Which mitigation alone is NOT sufficient to fully prevent CSRF on a sensitive POST endpoint?",
+        {"A": "Same-origin CSRF token", "B": "SameSite=Strict cookie", "C": "Checking the Referer header", "D": "Double-submit cookie pattern"},
+        "C",
+        "Referer checks are easily bypassed/spoofed and unreliable across browsers; tokens or SameSite cookies are required.",
+        "Headers a client can omit shouldn't be your only defense.",
+    ),
+    # ── network-security ─────────────────────────────────
+    (
+        "network-security",
+        "easy",
+        "Which protocol provides encrypted DNS lookups end-to-end?",
+        {"A": "DNS over UDP", "B": "DNS over TLS", "C": "ICMP", "D": "ARP"},
+        "B",
+        "DNS-over-TLS (DoT) and DNS-over-HTTPS (DoH) encrypt resolver traffic.",
+        "Add TLS to DNS.",
+    ),
+    (
+        "network-security",
+        "medium",
+        "Which approach minimises lateral movement after a host is compromised?",
+        {"A": "Flat network", "B": "Network segmentation", "C": "Disable logging", "D": "Open all ports"},
+        "B",
+        "Segmentation limits the blast radius — attackers must cross controlled boundaries.",
+        "Think 'walls between zones'.",
+    ),
+    (
+        "network-security",
+        "hard",
+        "What is the primary purpose of a SIEM?",
+        {"A": "Block malware in real time", "B": "Aggregate and correlate security events", "C": "Encrypt files at rest", "D": "Replace a WAF"},
+        "B",
+        "SIEMs ingest logs from multiple sources and correlate alerts for analyst investigation.",
+        "It's a centralised visibility tool.",
+    ),
+    # ── cryptography ─────────────────────────────────────
+    (
+        "cryptography",
+        "easy",
+        "Which is a one-way cryptographic primitive?",
+        {"A": "AES", "B": "RSA", "C": "SHA-256", "D": "Diffie-Hellman"},
+        "C",
+        "Hash functions like SHA-256 are designed to be one-way.",
+        "Hashes can't be reversed.",
+    ),
+    (
+        "cryptography",
+        "medium",
+        "What is a key benefit of authenticated encryption (e.g. AES-GCM) over CBC + HMAC?",
+        {"A": "Faster on tiny payloads only", "B": "Built-in integrity, harder to misuse", "C": "Skips the IV", "D": "Removes the need for keys"},
+        "B",
+        "AEAD modes pair encryption with integrity in a single primitive that's harder to misuse.",
+        "Think 'one operation, two guarantees'.",
+    ),
+    (
+        "cryptography",
+        "hard",
+        "Why is reusing a nonce with AES-GCM catastrophic?",
+        {"A": "Nothing happens", "B": "It leaks the plaintext via XOR", "C": "It only weakens the MAC slightly", "D": "It rotates the key"},
+        "B",
+        "Nonce reuse in GCM lets an attacker derive XOR of plaintexts and forge messages.",
+        "GCM's confidentiality and authenticity rely on nonce uniqueness.",
+    ),
+    # ── auth-and-iam ─────────────────────────────────────
+    (
+        "auth-and-iam",
+        "easy",
+        "Which factor combination satisfies multi-factor authentication?",
+        {"A": "Password + secret question", "B": "Password + hardware token", "C": "Two passwords", "D": "Username + email"},
+        "B",
+        "MFA requires two distinct factor categories (knowledge, possession, inherence).",
+        "Different categories — not two of the same.",
+    ),
+    (
+        "auth-and-iam",
+        "medium",
+        "What is the safest way to store a JWT in a SPA used in a browser?",
+        {"A": "localStorage", "B": "httpOnly Secure cookie", "C": "URL fragment", "D": "Plain cookie"},
+        "B",
+        "httpOnly Secure cookies are inaccessible to JavaScript, mitigating XSS token theft.",
+        "Hide it from JavaScript.",
+    ),
+    (
+        "auth-and-iam",
+        "hard",
+        "In OAuth 2.0 Authorization Code with PKCE, what does PKCE protect against?",
+        {"A": "Server outages", "B": "Authorization code interception", "C": "Database leaks", "D": "Brute-force passwords"},
+        "B",
+        "PKCE binds the auth code to the original requester via code_verifier / code_challenge.",
+        "It prevents code-stealing attacks on public clients.",
+    ),
+    # ── secure-coding ────────────────────────────────────
+    (
+        "secure-coding",
+        "easy",
+        "What is the safest way to build a SQL query with user input?",
+        {"A": "String concatenation", "B": "Format strings", "C": "Parameterised queries", "D": "Escaping quotes manually"},
+        "C",
+        "Parameterised queries / prepared statements separate code from data.",
+        "Let the driver bind the values.",
+    ),
+    (
+        "secure-coding",
+        "medium",
+        "Which dependency-related practice reduces supply-chain risk the most?",
+        {"A": "Pinning exact versions and reviewing updates", "B": "Always installing latest", "C": "Disabling lockfiles", "D": "Using random forks"},
+        "A",
+        "Pinned, reviewed dependencies prevent silent malicious updates.",
+        "Reproducible builds are safer.",
+    ),
+    (
+        "secure-coding",
+        "hard",
+        "What's the main risk of logging entire request bodies?",
+        {"A": "Storage cost only", "B": "Leaking secrets/PII into log stores", "C": "It improves debugging always", "D": "Slow logs"},
+        "B",
+        "Bodies often contain credentials, tokens, or PII that then get stored beyond the app's protection boundary.",
+        "Logs are a privacy boundary too.",
+    ),
 ]
 
 
-async def seed():
+async def seed() -> None:
     await init_db()
 
-    async with async_session_factory() as session:
-        # Check if already seeded
-        from sqlalchemy import select, func
-        count_result = await session.execute(select(func.count(Topic.id)))
-        if count_result.scalar() > 0:
-            print("[OK] Database already seeded. Skipping.")
-            return
+    async with AsyncSessionLocal() as session:
+        existing = (await session.execute(select(func.count(Topic.id)))).scalar() or 0
+        if existing >= len(TOPICS):
+            print(f"[OK] Database already has {existing} topics. Adding any missing questions only.")
+        else:
+            for tid, title, desc, order in TOPICS:
+                exists = (
+                    await session.execute(select(Topic).where(Topic.id == tid))
+                ).scalar_one_or_none()
+                if exists:
+                    continue
+                session.add(
+                    Topic(
+                        id=tid,
+                        title=title,
+                        description=desc,
+                        order_index=order,
+                        is_active=True,
+                    )
+                )
+            await session.flush()
+            print(f"[OK] Seeded {len(TOPICS)} topics.")
 
-        # Create topics
-        topic_map = {}
-        for t in TOPICS:
-            topic = Topic(**t)
-            session.add(topic)
-            topic_map[t["name"]] = topic
-
-        await session.flush()
-
-        # Create questions
-        for q_data in QUESTIONS:
-            topic_name = q_data.pop("topic")
-            question = Question(topic_id=topic_map[topic_name].id, **q_data)
-            session.add(question)
+        # Insert questions if not already present (by text + topic)
+        added = 0
+        for topic_id, difficulty, text, options, correct, explanation, hint in QUESTIONS:
+            already = (
+                await session.execute(
+                    select(Question).where(
+                        Question.topic_id == topic_id,
+                        Question.text == text,
+                    )
+                )
+            ).scalar_one_or_none()
+            if already:
+                continue
+            session.add(
+                Question(
+                    topic_id=topic_id,
+                    difficulty=difficulty,
+                    text=text,
+                    options=options,
+                    correct_answer=correct,
+                    explanation=explanation,
+                    hint=hint,
+                    source="dataset",
+                )
+            )
+            added += 1
 
         await session.commit()
-        print(f"[OK] Seeded {len(TOPICS)} topics and {len(QUESTIONS)} questions.")
+        print(f"[OK] Added {added} new questions.")
 
 
 if __name__ == "__main__":

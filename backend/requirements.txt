@@ -3,27 +3,34 @@ fastapi==0.115.0
 uvicorn[standard]==0.30.6
 python-multipart==0.0.9
 
-# ── Database (PostgreSQL async) ────────────────────────────
+# ── Database (PostgreSQL async; SQLite for tests) ──────────
 sqlalchemy[asyncio]==2.0.36
 asyncpg==0.30.0
-psycopg2-binary==2.9.10
+aiosqlite==0.20.0
 alembic==1.14.0
 
-# ── Redis ─────────────────────────────────────────────────
-redis[asyncio]==5.2.1
+# ── HTTP client (AI providers, health checks) ──────────────
+httpx==0.27.2
 
 # ── Auth ──────────────────────────────────────────────────
+# Pin bcrypt < 4 — passlib's bcrypt backend has incompat with bcrypt >= 4.1
 passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
 PyJWT==2.9.0
-
-# ── AI Integration ────────────────────────────────────────
-openai==1.58.1
-instructor==1.7.2
 
 # ── Validation & Settings ─────────────────────────────────
 pydantic[email]==2.10.4
 python-dotenv==1.0.1
 
-# ── ML / RL Engine ────────────────────────────────────────
-torch==2.5.1
+# ── Observability ─────────────────────────────────────────
+prometheus-client==0.21.1
+slowapi==0.1.9
+
+# ── ML / RL Engine (optional, lazy-loaded) ────────────────
+# Comment out on tiny machines — RL falls back to heuristic engine.
+torch==2.5.1; sys_platform != "win32" or python_version < "3.13"
 numpy==1.26.4
+
+# ── Testing ───────────────────────────────────────────────
+pytest==8.3.4
+pytest-asyncio==0.24.0

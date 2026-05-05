@@ -1,26 +1,26 @@
 """
-AI question generation with cache-first DeepSeek integration.
+AI quiz-question generation with cache-first reuse.
 
-The session flow should use local datasets first. This service is only called
-when a requested topic/difficulty has no dataset question available.
+The session flow uses local datasets first. This service is only invoked when a
+requested topic/difficulty has no dataset question available. Generated
+questions are stored in the `questions` table with source='ai' and reused.
+
+Provider chain (auto-fallback): Ollama → OpenAI/OpenRouter → Together → static.
 """
 
-import json
+from __future__ import annotations
+
 import logging
-import os
-import urllib.error
-import urllib.request
+import random
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.core.metrics import ai_calls_total
 from backend.app.models.models import Question, Topic
+from backend.app.services.ai_provider import AIProviderError, get_ai_provider
 
-logger = logging.getLogger(__name__)
-
-DEEPSEEK_API_URL = os.getenv("DEEPSEEK_API_URL", "https://api.deepseek.com/chat/completions")
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
-DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+logger = logging.getLogger("nrl.ai_question")
 
 
 def _topic_title(topic: str) -> str:
@@ -48,10 +48,12 @@ def _normalize_question(raw: dict, topic: str, difficulty: str) -> dict:
         "topic": raw.get("topic") or _topic_title(topic),
         "difficulty": difficulty,
         "type": raw.get("type") or "multiple_choice",
-        "question": raw.get("question") or f"What is a key {difficulty} security control for {_topic_title(topic)}?",
+        "question": raw.get("question")
+        or f"What is a key {difficulty} security control for {_topic_title(topic)}?",
         "options": options,
         "correct_answer": correct_answer,
-        "explanation": raw.get("explanation") or "The correct choice follows secure design principles for this topic.",
+        "explanation": raw.get("explanation")
+        or "The correct choice follows secure design principles for this topic.",
     }
 
 
@@ -68,56 +70,37 @@ def _placeholder_question(topic: str, difficulty: str) -> dict:
                 "D": "Disable security updates during development",
             },
             "correct_answer": "A",
-            "explanation": "Least privilege, validation, and monitoring are broadly useful controls across security domains.",
+            "explanation": (
+                "Least privilege, validation, and monitoring are broadly useful controls "
+                "across security domains."
+            ),
         },
         topic,
         difficulty,
     )
 
 
-def generate_question(topic: str, difficulty: str) -> dict:
-    """
-    Generate one multiple-choice question.
-
-    Uses DeepSeek only when `DEEPSEEK_API_KEY` is configured. Otherwise returns
-    a deterministic local placeholder so the app remains usable offline.
-    """
-    if not DEEPSEEK_API_KEY:
-        logger.warning("DEEPSEEK_API_KEY not configured; using local AI-question placeholder.")
-        return _placeholder_question(topic, difficulty)
-
-    prompt = (
-        "Generate exactly one cyber security multiple-choice question as JSON. "
-        "Use keys: topic, difficulty, type, question, options, correct_answer, explanation. "
-        "Options must be an object with A, B, C, D. correct_answer must be A, B, C, or D. "
-        f"Topic bundle: {topic}. Difficulty: {difficulty}."
+async def generate_question(topic: str, difficulty: str) -> dict:
+    """Generate one MCQ via the AI provider chain. Returns a placeholder on failure."""
+    system = (
+        "You generate concise, technically accurate cybersecurity quiz questions. "
+        "Respond ONLY with valid JSON."
     )
-    payload = {
-        "model": DEEPSEEK_MODEL,
-        "messages": [
-            {"role": "system", "content": "You generate concise, technically accurate cybersecurity quiz questions."},
-            {"role": "user", "content": prompt},
-        ],
-        "temperature": 0.5,
-        "response_format": {"type": "json_object"},
-    }
-    request = urllib.request.Request(
-        DEEPSEEK_API_URL,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
+    user = (
+        "Generate exactly one cybersecurity multiple-choice question.\n"
+        "Return JSON with keys: topic, difficulty, type, question, options, correct_answer, explanation.\n"
+        "options must be an object with keys A, B, C, D.\n"
+        "correct_answer must be one of A, B, C, D.\n"
+        f"Topic: {topic}. Difficulty: {difficulty}."
     )
-
     try:
-        with urllib.request.urlopen(request, timeout=20) as response:
-            data = json.loads(response.read().decode("utf-8"))
-        content = data["choices"][0]["message"]["content"]
-        return _normalize_question(json.loads(content), topic, difficulty)
-    except (KeyError, json.JSONDecodeError, urllib.error.URLError, TimeoutError) as exc:
-        logger.error("DeepSeek question generation failed: %s", exc)
+        provider = await get_ai_provider()
+        raw = await provider.generate_json(system=system, user=user, temperature=0.5, max_tokens=600)
+        ai_calls_total.labels(provider=provider.preferred, status="generated").inc()
+        return _normalize_question(raw, topic, difficulty)
+    except (AIProviderError, ValueError, KeyError, OSError) as exc:
+        logger.warning(f"AI question generation failed for {topic}/{difficulty}: {exc}")
+        ai_calls_total.labels(provider="fallback", status="static").inc()
         return _placeholder_question(topic, difficulty)
 
 
@@ -126,44 +109,44 @@ async def get_or_create_ai_question(
     topic_slug: str,
     difficulty: str,
 ) -> Question:
-    """Return a cached AI-generated question, generating and storing one if needed."""
-    topic_title = _topic_title(topic_slug)
-    topic_result = await db.execute(select(Topic).where(Topic.name == topic_title))
-    topic = topic_result.scalar_one_or_none()
-    if not topic:
-        topic = Topic(
-            name=topic_title,
-            description=f"AI-generated cybersecurity bundle: {topic_title}",
+    """Return a cached AI-generated question, generating one if needed."""
+    topic_id = topic_slug.lower().strip()
+    topic_row = (
+        await db.execute(select(Topic).where(Topic.id == topic_id))
+    ).scalar_one_or_none()
+
+    if not topic_row:
+        topic_row = Topic(
+            id=topic_id,
+            title=_topic_title(topic_slug),
+            description=f"AI-generated cybersecurity bundle: {_topic_title(topic_slug)}",
             is_active=True,
         )
-        db.add(topic)
+        db.add(topic_row)
         await db.flush()
 
     cached_result = await db.execute(
         select(Question).where(
-            Question.topic_id == topic.id,
+            Question.topic_id == topic_row.id,
             Question.difficulty == difficulty,
             Question.source == "ai",
-            Question.is_active == True,
         )
     )
     cached = cached_result.scalars().all()
     if cached:
-        import random
-
+        ai_calls_total.labels(provider="cache", status="hit").inc()
         return random.choice(cached)
 
-    generated = generate_question(topic_slug, difficulty)
+    generated = await generate_question(topic_slug, difficulty)
     question = Question(
-        topic_id=topic.id,
+        topic_id=topic_row.id,
         difficulty=difficulty,
         text=generated["question"],
         options=generated["options"],
         correct_answer=generated["correct_answer"],
         explanation=generated["explanation"],
-        hint=f"Focus on the safest control for {topic_title}.",
+        hint=f"Focus on the safest control for {_topic_title(topic_slug)}.",
         source="ai",
-        is_active=True,
     )
     db.add(question)
     await db.flush()

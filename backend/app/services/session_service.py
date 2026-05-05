@@ -251,6 +251,9 @@ class SessionService:
         if is_correct:
             session.correct_answers += 1
 
+        # ── Update profile counters (live) ────────────────
+        await self._update_profile_counters(user.id, is_correct)
+
         # ── Update learner metrics ────────────────────────
         await self._update_topic_metric(user.id, topic_slug, is_correct, time_taken)
 
@@ -329,6 +332,7 @@ class SessionService:
         return session
 
     async def _fetch_question(self, difficulty: str, topic: str) -> QuestionPayload | None:
+        # 1. Try local JSON dataset (if curated for this topic)
         q = _load_random_question(topic, difficulty)
         if q:
             return QuestionPayload(
@@ -340,13 +344,32 @@ class SessionService:
                 hint_available="hint" in q,
                 source=q.get("source", "dataset"),
             )
-        # Fallback: query DB
+
+        # 2. DB fallback — filter by topic + difficulty first
         result = await self.db.execute(
             select(Question)
-            .where(Question.difficulty == difficulty)
-            .limit(10)
+            .where(
+                Question.topic_id == topic,
+                Question.difficulty == difficulty,
+            )
+            .limit(20)
         )
         qs = result.scalars().all()
+
+        # 3. Relax to any difficulty for the same topic
+        if not qs:
+            result = await self.db.execute(
+                select(Question).where(Question.topic_id == topic).limit(20)
+            )
+            qs = result.scalars().all()
+
+        # 4. Last resort: any question of the requested difficulty
+        if not qs:
+            result = await self.db.execute(
+                select(Question).where(Question.difficulty == difficulty).limit(20)
+            )
+            qs = result.scalars().all()
+
         if qs:
             db_q = random.choice(qs)
             return QuestionPayload(
@@ -358,7 +381,24 @@ class SessionService:
                 hint_available=db_q.hint is not None,
                 source=db_q.source,
             )
-        return None
+
+        # 5. Trigger AI generation as a final fallback
+        try:
+            from backend.app.services.ai_question_service import get_or_create_ai_question
+
+            db_q = await get_or_create_ai_question(self.db, topic, difficulty)
+            return QuestionPayload(
+                id=db_q.id,
+                text=db_q.text,
+                options=db_q.options,
+                difficulty=db_q.difficulty,
+                topic_name=db_q.topic_id,
+                hint_available=db_q.hint is not None,
+                source=db_q.source,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"AI question fallback failed for {topic}/{difficulty}: {exc}")
+            return None
 
     def _update_state(self, state: dict, is_correct: bool, time_taken: int) -> dict:
         """
@@ -389,6 +429,21 @@ class SessionService:
         new["topic_confidence"] = new["quiz_accuracy"]
 
         return new
+
+    async def _update_profile_counters(self, user_id: str, is_correct: bool) -> None:
+        """Bump per-user totals for dashboard accuracy."""
+        result = await self.db.execute(
+            select(Profile).where(Profile.user_id == user_id)
+        )
+        profile = result.scalar_one_or_none()
+        if not profile:
+            profile = Profile(user_id=user_id)
+            self.db.add(profile)
+            await self.db.flush()
+        profile.total_questions_answered += 1
+        if is_correct:
+            profile.total_correct += 1
+        profile.last_active = datetime.now(timezone.utc)
 
     async def _update_topic_metric(
         self, user_id: str, topic_id: str, is_correct: bool, time_taken: int
@@ -436,10 +491,13 @@ class SessionService:
             kl = "advanced" if acc >= 80 else "intermediate" if acc >= 50 else "beginner"
             profile.knowledge_level = kl
             profile.total_xp += max(0, int(session.total_reward * 10))
-            if is_correct := (session.correct_answers > 0):  # noqa: F841
+            session_was_productive = session.correct_answers > 0
+            if session_was_productive:
                 profile.current_streak += 1
                 if profile.current_streak > profile.longest_streak:
                     profile.longest_streak = profile.current_streak
+            else:
+                profile.current_streak = 0
 
         logger.info(
             f"Session {session.id} completed — "
