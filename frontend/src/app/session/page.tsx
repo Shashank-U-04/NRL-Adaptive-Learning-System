@@ -2,15 +2,15 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
 import { sessionApi, type QuestionPayload } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
-import Navbar from "@/components/Navbar";
+import AppLayout from "@/components/AppLayout";
 import {
-  Brain, CheckCircle2, XCircle, Zap, Timer,
-  ArrowRight, Trophy, Flame, Loader2, LogOut,
+  Play, ChevronRight, Check, X, Sparkles, Flame, Zap,
+  Globe, Shield, Lock, Layers, Bug, Database, Trophy, ArrowRight,
 } from "lucide-react";
 
+// ── Types ─────────────────────────────────────────────────
 type SessionState = "idle" | "loading" | "active" | "feedback" | "summary";
 
 interface SessionSummaryData {
@@ -22,6 +22,19 @@ interface SessionSummaryData {
   duration_seconds: number;
 }
 
+// ── Topic definitions ────────────────────────────────────
+const TOPICS = [
+  { id: "networking",       name: "Networking",       icon: Globe,    color: "#3B82F6" },
+  { id: "web-security",     name: "Web Security",     icon: Shield,   color: "#10B981" },
+  { id: "cryptography",     name: "Cryptography",     icon: Lock,     color: "#8B5CF6" },
+  { id: "system-security",  name: "System Security",  icon: Layers,   color: "#F59E0B" },
+  { id: "ethical-hacking",  name: "Ethical Hacking",  icon: Bug,      color: "#F43F5E" },
+  { id: "forensics",        name: "Forensics",        icon: Database, color: "#14B8A6" },
+] as const;
+
+const OPTION_LETTERS = ["A", "B", "C", "D"] as const;
+
+// ── Page ──────────────────────────────────────────────────
 export default function SessionPage() {
   const { isAuthenticated, isLoading: authLoading, refreshUser } = useAuth();
   const router = useRouter();
@@ -44,13 +57,16 @@ export default function SessionPage() {
   const [error, setError] = useState("");
   const [activeTopic, setActiveTopic] = useState("");
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [floatXP, setFloatXP] = useState(false);
   const timerRef = useRef(0);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
+  // ── Auth guard ───────────────────────────────────────
   useEffect(() => {
     if (!authLoading && !isAuthenticated) router.push("/login");
   }, [authLoading, isAuthenticated, router]);
 
+  // ── Restore pending session from sessionStorage ──────
   useEffect(() => {
     if (authLoading || !isAuthenticated || sessionId) return;
     const pending = sessionStorage.getItem("nrl_pending_session");
@@ -76,7 +92,7 @@ export default function SessionPage() {
     }
   }, [authLoading, isAuthenticated, sessionId]);
 
-  // Timer
+  // ── Timer ────────────────────────────────────────────
   useEffect(() => {
     if (sessionState === "active" || sessionState === "feedback") {
       intervalRef.current = setInterval(() => {
@@ -84,14 +100,17 @@ export default function SessionPage() {
         setElapsedSeconds(timerRef.current);
       }, 1000);
     }
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
   }, [sessionState]);
 
-  const startSession = async () => {
+  // ── API actions ──────────────────────────────────────
+  const startSession = async (topic?: string) => {
     setSessionState("loading");
     setError("");
     try {
-      const res = await sessionApi.start(selectedTopic);
+      const res = await sessionApi.start(topic);
       setSessionId(res.session_id);
       setQuestion(res.question);
       setActiveTopic(res.question?.topic_name || "");
@@ -129,6 +148,11 @@ export default function SessionPage() {
       setStreak(res.streak);
       setAiExplanation(res.action_explanation);
       setStepCount((prev) => prev + 1);
+
+      if (res.is_correct) {
+        setFloatXP(true);
+        setTimeout(() => setFloatXP(false), 1800);
+      }
 
       if (res.session_done) {
         const summaryRes = await sessionApi.end(sessionId);
@@ -179,246 +203,365 @@ export default function SessionPage() {
     }
   };
 
-  const formatTime = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
+  const formatTime = (s: number) =>
+    `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
 
-  // ── Idle Screen ──────────────────────────────────────
+  // ── Idle state ───────────────────────────────────────
   if (sessionState === "idle") {
     return (
-      <div className="min-h-screen" style={{ background: "var(--bg-primary)" }}>
-        <Navbar />
-        <div className="max-w-2xl mx-auto px-4 pt-32 text-center">
-          <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}>
-            <div className="w-20 h-20 rounded-2xl mx-auto mb-6 flex items-center justify-center animate-float"
-                 style={{ background: "var(--gradient-primary)" }}>
-              <Brain className="w-10 h-10 text-white" />
-            </div>
-            <h1 className="text-3xl font-bold mb-3">Adaptive Learning Session</h1>
-            <p className="mb-8" style={{ color: "var(--text-secondary)" }}>
-              The AI will select questions based on your knowledge level and performance.
-              Each action is explainable — you&apos;ll see why every decision is made.
-            </p>
-            {error && (
-              <div className="mb-4 p-3 rounded-lg text-sm text-red-300"
-                   style={{ background: "var(--error-glow)" }}>{error}</div>
-            )}
-            {selectedTopic && (
-              <p className="text-sm mb-4 capitalize" style={{ color: "var(--accent-secondary)" }}>
-                Selected bundle: {selectedTopic.replace(/-/g, " ")}
-              </p>
-            )}
-            <button onClick={startSession} className="btn-primary text-lg !py-4 !px-12 animate-pulse-glow">
-              Start Session
-            </button>
-          </motion.div>
-        </div>
-      </div>
-    );
-  }
+      <AppLayout>
+        <div className="scroll-y" style={{ height: "100%" }}>
+          <div style={{ maxWidth: 720, margin: "0 auto", padding: "40px 32px" }}>
 
-  // ── Summary Screen ───────────────────────────────────
-  if (sessionState === "summary" && summary) {
-    return (
-      <div className="min-h-screen" style={{ background: "var(--bg-primary)" }}>
-        <Navbar />
-        <div className="max-w-lg mx-auto px-4 pt-28">
-          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-                      className="glass-card-static p-8 text-center">
-            <Trophy className="w-16 h-16 mx-auto mb-4" style={{ color: "var(--warning)" }} />
-            <h2 className="text-2xl font-bold mb-6">Session Complete!</h2>
-            <div className="grid grid-cols-2 gap-4 mb-8">
-              {[
-                { label: "Questions", value: summary.total_questions },
-                { label: "Correct", value: summary.correct_answers },
-                { label: "Accuracy", value: `${summary.accuracy}%` },
-                { label: "XP Earned", value: `+${summary.xp_earned}` },
-                { label: "Total Reward", value: summary.total_reward.toFixed(1) },
-                { label: "Duration", value: formatTime(summary.duration_seconds) },
-              ].map((item) => (
-                <div key={item.label} className="glass-card p-3">
-                  <div className="text-xl font-bold" style={{ color: "var(--accent-primary)" }}>
-                    {item.value}
-                  </div>
-                  <div className="text-xs" style={{ color: "var(--text-muted)" }}>{item.label}</div>
+            <h1 className="page-h1" style={{ marginBottom: 6 }}>Start an adaptive session</h1>
+            <p className="page-sub" style={{ marginBottom: 28 }}>
+              Pick a track, or let the engine choose.
+            </p>
+
+            {error && (
+              <div style={{ padding: "10px 14px", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 10, color: "var(--red)", fontSize: 13, marginBottom: 20 }}>
+                {error}
+              </div>
+            )}
+
+            {/* AI smart-pick card */}
+            <div
+              className="glass"
+              style={{
+                padding: "20px 22px",
+                marginBottom: 24,
+                display: "flex",
+                alignItems: "center",
+                gap: 16,
+                borderLeft: "3px solid var(--accent)",
+              }}
+            >
+              <div
+                className="stat-icon"
+                style={{ background: "var(--accent-soft)", color: "var(--accent)", flexShrink: 0 }}
+              >
+                <Sparkles size={18} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600, fontSize: 15 }}>Smart pick</div>
+                <div style={{ fontSize: 13, color: "var(--text-2)", marginTop: 2 }}>
+                  Let the AI engine select the best topic for your current skill level.
                 </div>
+              </div>
+              <button
+                className="btn btn-primary"
+                onClick={() => startSession(selectedTopic)}
+                disabled={sessionState === "loading"}
+              >
+                <Play size={15} />
+                Start →
+              </button>
+            </div>
+
+            {/* Topics grid — 2 columns */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              {TOPICS.map(({ id, name, icon: Icon, color }) => (
+                <button
+                  key={id}
+                  className="glass glass-hover"
+                  onClick={() => startSession(id)}
+                  disabled={sessionState === "loading"}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 14,
+                    padding: "18px 20px",
+                    cursor: "pointer",
+                    textAlign: "left",
+                    border: "1px solid var(--line)",
+                    borderRadius: 14,
+                    background: "rgba(255,255,255,0.035)",
+                    width: "100%",
+                    transition: "background 120ms ease, border-color 120ms ease",
+                  }}
+                >
+                  <div
+                    className="stat-icon"
+                    style={{ background: `${color}22`, color, flexShrink: 0 }}
+                  >
+                    <Icon size={18} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 2 }}>{name}</div>
+                    <div style={{ fontSize: 12, color: "var(--text-3)" }}>10 questions · ~6 min</div>
+                  </div>
+                  <ChevronRight size={16} style={{ color: "var(--text-3)", flexShrink: 0 }} />
+                </button>
               ))}
             </div>
-            <div className="flex gap-3">
-              <button onClick={() => { setSessionState("idle"); setSummary(null); }}
-                      className="btn-primary flex-1">New Session</button>
-              <button onClick={() => router.push("/dashboard")}
-                      className="btn-secondary flex-1">Dashboard</button>
-            </div>
-          </motion.div>
+
+          </div>
         </div>
-      </div>
+      </AppLayout>
     );
   }
 
-  // ── Loading State ────────────────────────────────────
+  // ── Loading state (before first question) ───────────
   if (sessionState === "loading" && !question) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--bg-primary)" }}>
-        <Loader2 className="w-10 h-10 animate-spin" style={{ color: "var(--accent-primary)" }} />
-      </div>
+      <AppLayout>
+        <div style={{ height: "100%", display: "grid", placeItems: "center" }}>
+          <div className="spinner" style={{ width: 28, height: 28, borderColor: "var(--accent)", borderRightColor: "transparent" }} />
+        </div>
+      </AppLayout>
     );
   }
 
-  // ── Active / Feedback State ──────────────────────────
-  return (
-    <div className="min-h-screen" style={{ background: "var(--bg-primary)" }}>
-      <Navbar />
-      <main className="max-w-3xl mx-auto px-4 pt-24 pb-12">
-        {/* Session Header */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-4">
-            {activeTopic && (
-              <span className="text-sm font-medium" style={{ color: "var(--accent-secondary)" }}>
-                {activeTopic}
-              </span>
-            )}
-            <div className="flex items-center gap-1.5">
-              <Timer className="w-4 h-4" style={{ color: "var(--text-muted)" }} />
-              <span className="text-sm font-mono" style={{ color: "var(--text-secondary)" }}>
-                {formatTime(elapsedSeconds)}
-              </span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <Zap className="w-4 h-4" style={{ color: "var(--warning)" }} />
-              <span className="text-sm font-medium"
-                    style={{ color: totalReward >= 0 ? "var(--success)" : "var(--error)" }}>
-                {totalReward >= 0 ? "+" : ""}{totalReward.toFixed(0)} pts
-              </span>
-            </div>
-            {streak > 0 && (
-              <div className="flex items-center gap-1 streak-fire">
-                <Flame className="w-4 h-4" style={{ color: "var(--warning)" }} />
-                <span className="text-sm font-bold" style={{ color: "var(--warning)" }}>
-                  {streak}🔥
-                </span>
+  // ── Summary state ────────────────────────────────────
+  if (sessionState === "summary" && summary) {
+    const scoreLabel = summary.accuracy >= 80 ? "Excellent" : summary.accuracy >= 60 ? "Good" : "Keep going";
+    return (
+      <AppLayout>
+        <div className="scroll-y" style={{ height: "100%" }}>
+          <div style={{ maxWidth: 560, margin: "0 auto", padding: "48px 32px" }}>
+
+            <div className="glass slide-up-in" style={{ padding: 36, textAlign: "center" }}>
+              <div style={{
+                width: 72, height: 72, borderRadius: "50%",
+                background: "rgba(245,158,11,0.14)",
+                display: "grid", placeItems: "center",
+                margin: "0 auto 20px",
+              }}>
+                <Trophy size={36} style={{ color: "var(--amber)" }} />
               </div>
-            )}
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-sm" style={{ color: "var(--text-muted)" }}>
-              Q{stepCount + 1} / 30
-            </span>
-            <button onClick={endEarly} className="text-xs px-3 py-1.5 rounded-lg transition-colors"
-                    style={{ color: "var(--text-muted)", background: "rgba(255,255,255,0.04)" }}>
-              <LogOut className="w-3.5 h-3.5 inline mr-1" /> End
-            </button>
+
+              <h2 style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.02em", margin: "0 0 4px" }}>
+                Session complete
+              </h2>
+              <p style={{ color: "var(--text-2)", fontSize: 14, margin: "0 0 28px" }}>{scoreLabel}!</p>
+
+              {/* Summary stats */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 28 }}>
+                {[
+                  { label: "Score", value: `${summary.correct_answers}/${summary.total_questions}` },
+                  { label: "Accuracy", value: `${summary.accuracy}%` },
+                  { label: "XP earned", value: `+${summary.xp_earned}` },
+                  { label: "Best streak", value: `${streak}` },
+                ].map(({ label, value }) => (
+                  <div
+                    key={label}
+                    className="glass"
+                    style={{ padding: "14px 16px" }}
+                  >
+                    <div style={{ fontSize: 24, fontWeight: 700, color: "var(--accent)", marginBottom: 2 }}>
+                      {value}
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                      {label}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Actions */}
+              <div style={{ display: "flex", gap: 10 }}>
+                <button
+                  className="btn btn-ghost"
+                  style={{ flex: 1 }}
+                  onClick={() => router.push("/analytics")}
+                >
+                  View analytics
+                </button>
+                <button
+                  className="btn btn-primary"
+                  style={{ flex: 1 }}
+                  onClick={() => {
+                    setSessionState("idle");
+                    setSummary(null);
+                    setSessionId(null);
+                    setQuestion(null);
+                  }}
+                >
+                  <Play size={15} />
+                  Play again
+                </button>
+              </div>
+            </div>
+
           </div>
         </div>
+      </AppLayout>
+    );
+  }
 
-        {/* Progress Bar */}
-        <div className="h-1.5 rounded-full mb-6" style={{ background: "rgba(255,255,255,0.06)" }}>
-          <motion.div className="h-full rounded-full"
-                      style={{ background: "var(--gradient-primary)" }}
-                      animate={{ width: `${((stepCount + 1) / 30) * 100}%` }}
-                      transition={{ duration: 0.3 }} />
-        </div>
+  // ── Active / Feedback state ──────────────────────────
+  const isFeedback = sessionState === "feedback";
+  const isLoading = sessionState === "loading";
+  const optionKeys = question ? Object.keys(question.options) : [];
 
-        {/* AI Explanation Banner */}
-        <motion.div key={aiExplanation} initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
-                    className="flex items-start gap-3 p-3 rounded-xl mb-6"
-                    style={{ background: "rgba(108, 99, 255, 0.08)", border: "1px solid rgba(108, 99, 255, 0.2)" }}>
-          <Brain className="w-5 h-5 mt-0.5 shrink-0" style={{ color: "var(--accent-primary)" }} />
-          <p className="text-sm" style={{ color: "var(--accent-secondary)" }}>{aiExplanation}</p>
-        </motion.div>
+  return (
+    <AppLayout>
+      <div className="scroll-y" style={{ height: "100%" }}>
+        <div style={{ maxWidth: 760, margin: "0 auto", padding: "32px 32px 60px" }}>
 
-        {/* Question Card */}
-        {question && (
-          <AnimatePresence mode="wait">
-            <motion.div key={question.id} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: -20 }} className="glass-card-static p-6 md:p-8">
-              {/* Difficulty Badge */}
-              <div className="flex items-center justify-between mb-4">
-                <span className={`px-3 py-1 rounded-full text-xs font-medium badge-${question.difficulty}`}>
+          {/* Session header */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontWeight: 600, fontSize: 14 }}>{activeTopic || "Session"}</span>
+              <span style={{ fontSize: 13, color: "var(--text-3)" }}>
+                Question {stepCount + 1}/30
+              </span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              {streak >= 2 && (
+                <span className="pill pill-amber" style={{ gap: 4 }}>
+                  <Flame size={12} />
+                  {streak}x streak
+                </span>
+              )}
+              <button className="btn btn-ghost" style={{ height: 32, fontSize: 12 }} onClick={endEarly}>
+                End
+              </button>
+            </div>
+          </div>
+
+          {/* Progress bar */}
+          <div className="pbar" style={{ marginBottom: 24 }}>
+            <span style={{ width: `${((stepCount + 1) / 30) * 100}%` }} />
+          </div>
+
+          {/* Question card */}
+          {question && (
+            <div className="glass" style={{ padding: 28, position: "relative" }}>
+
+              {/* Top row: AI note + difficulty badge */}
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 18 }}>
+                {aiExplanation && (
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 8, flex: 1 }}>
+                    <Sparkles size={14} style={{ color: "var(--accent)", flexShrink: 0, marginTop: 1 }} />
+                    <p style={{ fontSize: 12, color: "var(--text-2)", fontStyle: "italic", margin: 0 }}>
+                      {aiExplanation}
+                    </p>
+                  </div>
+                )}
+                <span
+                  className={`pill ${
+                    question.difficulty === "easy" ? "pill-easy" :
+                    question.difficulty === "medium" ? "pill-medium" :
+                    "pill-hard"
+                  }`}
+                  style={{ flexShrink: 0 }}
+                >
                   {question.difficulty.charAt(0).toUpperCase() + question.difficulty.slice(1)}
                 </span>
-                <span className="text-xs" style={{ color: "var(--text-muted)" }}>{question.topic_name}</span>
               </div>
 
-              <h2 className="text-lg md:text-xl font-semibold mb-6 leading-relaxed">
+              {/* Question text */}
+              <h2 style={{ fontSize: 19, fontWeight: 500, lineHeight: 1.5, marginBottom: 24 }}>
                 {question.text}
               </h2>
 
               {/* Options */}
-              <div className="space-y-3">
-                {Object.entries(question.options).map(([key, value]) => {
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {optionKeys.map((key, idx) => {
+                  const value = question.options[key];
+                  const letter = OPTION_LETTERS[idx] ?? key;
                   const isSelected = selectedAnswer === key;
-                  const showResult = sessionState === "feedback";
-                  const isCorrectOption = key === correctAnswer;
+                  const isCorrectOpt = isFeedback && key === correctAnswer;
+                  const isWrongOpt = isFeedback && isSelected && !isCorrect;
 
-                  let borderColor = "var(--border-glass)";
-                  let bgColor = "transparent";
-                  if (showResult && isCorrectOption) {
-                    borderColor = "var(--success)";
-                    bgColor = "var(--success-glow)";
-                  } else if (showResult && isSelected && !isCorrect) {
-                    borderColor = "var(--error)";
-                    bgColor = "var(--error-glow)";
-                  } else if (isSelected && !showResult) {
-                    borderColor = "var(--accent-primary)";
-                    bgColor = "var(--accent-glow)";
-                  }
+                  const cls = [
+                    "qopt",
+                    isCorrectOpt ? "correct" : "",
+                    isWrongOpt ? "wrong" : "",
+                    isSelected && !isFeedback ? "selected" : "",
+                    isFeedback || isLoading ? "disabled" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ");
 
                   return (
-                    <motion.button
+                    <button
                       key={key}
-                      whileHover={!showResult ? { scale: 1.01 } : {}}
-                      whileTap={!showResult ? { scale: 0.99 } : {}}
-                      onClick={() => !showResult && sessionState === "active" && submitAnswer(key)}
-                      disabled={showResult || sessionState === "loading"}
-                      className="w-full text-left p-4 rounded-xl flex items-center gap-3 transition-all duration-200"
-                      style={{ border: `1px solid ${borderColor}`, background: bgColor }}
+                      className={cls}
+                      onClick={() => {
+                        if (!isFeedback && !isLoading) submitAnswer(key);
+                      }}
+                      disabled={isFeedback || isLoading}
                     >
-                      <span className="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold shrink-0"
-                            style={{ background: "rgba(255,255,255,0.06)", color: "var(--text-secondary)" }}>
-                        {key}
-                      </span>
-                      <span className="text-sm">{value}</span>
-                      {showResult && isCorrectOption && <CheckCircle2 className="w-5 h-5 ml-auto text-green-400" />}
-                      {showResult && isSelected && !isCorrect && !isCorrectOption && (
-                        <XCircle className="w-5 h-5 ml-auto text-red-400" />
-                      )}
-                    </motion.button>
+                      <span className="opt-letter">{letter}</span>
+                      <span style={{ flex: 1 }}>{value}</span>
+                      {isCorrectOpt && <Check size={16} style={{ color: "var(--green)", flexShrink: 0 }} />}
+                      {isWrongOpt && <X size={16} style={{ color: "var(--red)", flexShrink: 0 }} />}
+                    </button>
                   );
                 })}
               </div>
 
-              {/* Feedback Section */}
-              {sessionState === "feedback" && (
-                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mt-6">
-                  <div className={`p-4 rounded-xl mb-4 ${isCorrect ? "badge-easy" : "badge-hard"}`}>
-                    <div className="flex items-center gap-2 mb-1">
-                      {isCorrect ? <CheckCircle2 className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}
-                      <span className="font-semibold">
-                        {isCorrect ? "Correct!" : "Incorrect"}
-                      </span>
-                      <span className="ml-auto text-sm font-medium">
-                        {reward >= 0 ? "+" : ""}{reward.toFixed(0)} pts
-                      </span>
-                    </div>
-                    {explanation && <p className="text-sm mt-2 opacity-90">{explanation}</p>}
+              {/* Feedback explanation */}
+              {isFeedback && (
+                <div
+                  className="fade-in"
+                  style={{
+                    marginTop: 20,
+                    padding: "14px 16px",
+                    borderRadius: 12,
+                    background: isCorrect
+                      ? "rgba(16,185,129,0.1)"
+                      : "rgba(239,68,68,0.1)",
+                    border: `1px solid ${isCorrect ? "rgba(16,185,129,0.3)" : "rgba(239,68,68,0.3)"}`,
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: explanation ? 6 : 0 }}>
+                    {isCorrect
+                      ? <Check size={16} style={{ color: "var(--green)", flexShrink: 0 }} />
+                      : <X size={16} style={{ color: "var(--red)", flexShrink: 0 }} />
+                    }
+                    <span style={{ fontWeight: 600, color: isCorrect ? "var(--green)" : "var(--red)" }}>
+                      {isCorrect ? "Correct." : "Not quite."}
+                    </span>
                   </div>
-                  <button onClick={nextQuestion}
-                          className="btn-primary w-full flex items-center justify-center gap-2">
-                    Next Question <ArrowRight className="w-5 h-5" />
-                  </button>
-                </motion.div>
+                  {explanation && (
+                    <p style={{ fontSize: 13, color: "var(--text-2)", margin: 0, lineHeight: 1.5 }}>
+                      {explanation}
+                    </p>
+                  )}
+                </div>
               )}
-            </motion.div>
-          </AnimatePresence>
-        )}
 
-        {/* No question available */}
-        {!question && sessionState === "active" && (
-          <div className="glass-card-static p-8 text-center">
-            <p style={{ color: "var(--text-secondary)" }}>No more questions available. </p>
-            <button onClick={endEarly} className="btn-primary mt-4">End Session</button>
-          </div>
-        )}
-      </main>
-    </div>
+              {/* XP float */}
+              {floatXP && (
+                <div className="xp-float">
+                  +{Math.max(1, Math.round(reward * 10))} XP
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* No question fallback */}
+          {!question && (sessionState === "active" || sessionState === "feedback") && (
+            <div className="glass" style={{ padding: 32, textAlign: "center" }}>
+              <p style={{ color: "var(--text-2)", marginBottom: 16 }}>No more questions available.</p>
+              <button className="btn btn-primary" onClick={endEarly}>End Session</button>
+            </div>
+          )}
+
+          {/* Submit / Next button row */}
+          {question && (
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16, position: "relative" }}>
+              {isFeedback && (
+                <button className="btn btn-primary btn-lg" onClick={nextQuestion}>
+                  Next question
+                  <ArrowRight size={17} />
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Error banner */}
+          {error && (
+            <div style={{ marginTop: 12, padding: "10px 14px", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 10, color: "var(--red)", fontSize: 13 }}>
+              {error}
+            </div>
+          )}
+
+        </div>
+      </div>
+    </AppLayout>
   );
 }

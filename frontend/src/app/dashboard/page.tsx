@@ -3,32 +3,75 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { motion } from "framer-motion";
 import { analyticsApi } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
-import Navbar from "@/components/Navbar";
+import AppLayout from "@/components/AppLayout";
+import { Sparkline, LineChart, RadarChart } from "@/components/Charts";
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  BarChart, Bar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
-} from "recharts";
-import {
-  Flame, Trophy, Target, BookOpen, Zap, TrendingUp, Play,
-  Brain, AlertTriangle, Clock,
+  Play, Zap, Flame, Target, BookOpen,
+  TrendingUp, TrendingDown, Sparkles,
 } from "lucide-react";
 import Link from "next/link";
 
-const fadeUp = {
-  hidden: { opacity: 0, y: 20 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.5 } },
-};
+// ── Helpers ──────────────────────────────────────────────
+function DifficultyBadge({ level }: { level: string }) {
+  const l = (level || "").toLowerCase();
+  const cls =
+    l === "easy" ? "pill pill-easy" :
+    l === "medium" ? "pill pill-medium" :
+    l === "hard" ? "pill pill-hard" :
+    "pill pill-neutral";
+  return <span className={cls}>{level}</span>;
+}
 
-const stagger = {
-  hidden: {},
-  show: { transition: { staggerChildren: 0.08 } },
-};
+interface StatCardProps {
+  icon: React.ElementType;
+  label: string;
+  value: string | number;
+  color: string;
+  sparkData: number[];
+  trend?: number | null;
+}
 
+function StatCard({ icon: Icon, label, value, color, sparkData, trend = null }: StatCardProps) {
+  const isPositive = trend !== null && trend >= 0;
+  return (
+    <div className="glass glass-hover stat-card" style={{ cursor: "default" }}>
+      <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+        <div className="stat-icon" style={{ background: `${color}22`, color, flexShrink: 0 }}>
+          <Icon size={18} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>
+            {label}
+          </div>
+          <div style={{ fontSize: 28, fontWeight: 600, lineHeight: 1.1, letterSpacing: "-0.02em" }}>
+            {value}
+          </div>
+          {trend !== null && (
+            <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 4 }}>
+              {isPositive
+                ? <TrendingUp size={12} style={{ color: "var(--green)" }} />
+                : <TrendingDown size={12} style={{ color: "var(--red)" }} />
+              }
+              <span style={{ fontSize: 11, color: isPositive ? "var(--green)" : "var(--red)", fontWeight: 500 }}>
+                {isPositive ? "+" : ""}{trend}
+              </span>
+              <span style={{ fontSize: 11, color: "var(--text-3)" }}>vs last week</span>
+            </div>
+          )}
+        </div>
+      </div>
+      <div style={{ marginTop: 12 }}>
+        <Sparkline data={sparkData} color={color} height={32} />
+      </div>
+    </div>
+  );
+}
+
+// ── Page ─────────────────────────────────────────────────
 export default function DashboardPage() {
-  const { isAuthenticated, isLoading: authLoading, profile } = useAuth();
+  const { isAuthenticated, isLoading: authLoading, user } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
@@ -55,187 +98,219 @@ export default function DashboardPage() {
 
   if (authLoading || isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--bg-primary)" }}>
-        <div className="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin"
-             style={{ borderColor: "var(--accent-primary)", borderTopColor: "transparent" }} />
+      <div style={{ height: "100vh", display: "grid", placeItems: "center", background: "var(--bg)" }}>
+        <div className="spinner" style={{ width: 24, height: 24, borderColor: "var(--accent)", borderRightColor: "transparent" }} />
       </div>
     );
   }
 
-  const stats = [
-    {
-      icon: Trophy, label: "Level",
-      value: (dashboard?.knowledge_level || "beginner").charAt(0).toUpperCase() +
-             (dashboard?.knowledge_level || "beginner").slice(1),
-      color: "#a78bfa",
-    },
-    { icon: Flame, label: "Streak", value: dashboard?.current_streak || 0, color: "#f59e0b", fire: true },
-    { icon: Target, label: "Accuracy", value: `${dashboard?.overall_accuracy || 0}%`, color: "#22c55e" },
-    { icon: Zap, label: "XP", value: dashboard?.total_xp || 0, color: "#6c63ff" },
-    { icon: BookOpen, label: "Sessions", value: dashboard?.sessions_completed || 0, color: "#3b82f6" },
-    { icon: TrendingUp, label: "Questions", value: dashboard?.total_questions || 0, color: "#ec4899" },
-  ];
+  // ── Derived data ─────────────────────────────────────
+  const firstName = (user?.name || "there").split(" ")[0];
+  const streak = dashboard?.current_streak || 0;
 
+  const chartAccuracyData = accuracyData && accuracyData.length > 0
+    ? accuracyData.map((item) => ({ d: item.session_number, acc: item.accuracy }))
+    : [
+        { d: 1, acc: 52 }, { d: 2, acc: 58 }, { d: 3, acc: 55 },
+        { d: 4, acc: 63 }, { d: 5, acc: 70 }, { d: 6, acc: 74 },
+        { d: 7, acc: 80 },
+      ];
+
+  const radarData = topicData && topicData.length > 0
+    ? topicData.map((t) => ({ topic: t.topic_name, mastery: t.mastery_score }))
+    : [
+        { topic: "Networking", mastery: 72 },
+        { topic: "Web Sec", mastery: 58 },
+        { topic: "Crypto", mastery: 45 },
+        { topic: "Sys Sec", mastery: 64 },
+        { topic: "Hacking", mastery: 35 },
+        { topic: "Forensics", mastery: 50 },
+      ];
+
+  const weakestTopic =
+    dashboard?.weak_topics?.[0]?.topic ||
+    (radarData.length > 0
+      ? radarData.reduce((a, b) => (a.mastery < b.mastery ? a : b)).topic
+      : "Cryptography");
+
+  // ── Render ───────────────────────────────────────────
   return (
-    <div className="min-h-screen" style={{ background: "var(--bg-primary)" }}>
-      <Navbar />
+    <AppLayout>
+      <div className="scroll-y" style={{ height: "100%" }}>
+        <div style={{ maxWidth: 1280, margin: "0 auto", padding: "32px 32px 40px" }}>
 
-      <main className="max-w-7xl mx-auto px-4 pt-24 pb-12">
-        {/* Header */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-                    className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
-          <div>
-            <h1 className="text-3xl font-bold mb-1">Dashboard</h1>
-            <p style={{ color: "var(--text-secondary)" }}>Your learning progress at a glance</p>
-          </div>
-          <Link href="/session" className="btn-primary flex items-center gap-2">
-            <Play className="w-5 h-5" /> Start Session
-          </Link>
-        </motion.div>
-
-        {/* Stats Grid */}
-        <motion.div variants={stagger} initial="hidden" animate="show"
-                    className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
-          {stats.map((s) => (
-            <motion.div key={s.label} variants={fadeUp}
-                        className="glass-card p-4 text-center">
-              <s.icon className="w-5 h-5 mx-auto mb-2" style={{ color: s.color }} />
-              <div className={`text-2xl font-bold mb-1 ${s.fire ? "streak-fire" : ""}`}>
-                {s.fire && (dashboard?.current_streak || 0) > 0 ? "🔥 " : ""}
-                {s.value}
-              </div>
-              <div className="text-xs" style={{ color: "var(--text-muted)" }}>{s.label}</div>
-            </motion.div>
-          ))}
-        </motion.div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Accuracy Trend Chart */}
-          <motion.div variants={fadeUp} initial="hidden" animate="show"
-                      className="glass-card-static p-6 lg:col-span-2">
-            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-              <TrendingUp className="w-5 h-5" style={{ color: "var(--accent-primary)" }} />
-              Accuracy Trend
-            </h3>
-            {accuracyData && accuracyData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={280}>
-                <LineChart data={accuracyData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                  <XAxis dataKey="session_number" stroke="var(--text-muted)" fontSize={12} />
-                  <YAxis stroke="var(--text-muted)" fontSize={12} />
-                  <Tooltip
-                    contentStyle={{
-                      background: "rgba(18,18,26,0.95)",
-                      border: "1px solid rgba(255,255,255,0.1)",
-                      borderRadius: "12px",
-                      color: "#f0f0f5",
-                    }}
-                  />
-                  <Line type="monotone" dataKey="accuracy" stroke="#6c63ff" strokeWidth={2}
-                        dot={{ fill: "#6c63ff", r: 3 }} activeDot={{ r: 5, fill: "#a78bfa" }} />
-                  <Line type="monotone" dataKey="reward" stroke="#22c55e" strokeWidth={2}
-                        dot={{ fill: "#22c55e", r: 3 }} strokeDasharray="5 5" />
-                </LineChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="h-[280px] flex items-center justify-center"
-                   style={{ color: "var(--text-muted)" }}>
-                <p>Complete sessions to see your progress</p>
-              </div>
-            )}
-          </motion.div>
-
-          {/* Weak Topics */}
-          <motion.div variants={fadeUp} initial="hidden" animate="show"
-                      className="glass-card-static p-6">
-            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5" style={{ color: "var(--warning)" }} />
-              Focus Areas
-            </h3>
-            {dashboard?.weak_topics && dashboard.weak_topics.length > 0 ? (
-              <div className="space-y-4">
-                {dashboard.weak_topics.map((topic) => (
-                  <div key={topic.topic}>
-                    <div className="flex justify-between text-sm mb-1">
-                      <span>{topic.topic}</span>
-                      <span style={{ color: "var(--text-muted)" }}>{topic.mastery}%</span>
-                    </div>
-                    <div className="h-2 rounded-full" style={{ background: "rgba(255,255,255,0.06)" }}>
-                      <div className="h-full rounded-full transition-all duration-500"
-                           style={{
-                             width: `${topic.mastery}%`,
-                             background: topic.mastery < 40 ? "var(--error)" :
-                                        topic.mastery < 70 ? "var(--warning)" : "var(--success)",
-                           }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-                Start sessions to discover your weak areas
+          {/* Header */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 28 }}>
+            <div>
+              <h1 className="page-h1">Welcome back, {firstName}</h1>
+              <p className="page-sub">
+                {streak > 0
+                  ? `${streak}-day streak — keep it up!`
+                  : "Start a session to build your streak."}
               </p>
-            )}
+            </div>
+            <Link href="/session">
+              <button className="btn btn-primary">
+                <Play size={16} />
+                Start new session
+              </button>
+            </Link>
+          </div>
 
-            {/* Topic Mastery Radar */}
-            {topicData && topicData.length > 0 && (
-              <div className="mt-6">
-                <ResponsiveContainer width="100%" height={200}>
-                  <RadarChart data={topicData}>
-                    <PolarGrid stroke="rgba(255,255,255,0.08)" />
-                    <PolarAngleAxis dataKey="topic_name" stroke="var(--text-muted)" fontSize={11} />
-                    <PolarRadiusAxis stroke="var(--text-muted)" fontSize={10} />
-                    <Radar dataKey="mastery_score" stroke="#6c63ff" fill="#6c63ff" fillOpacity={0.2} />
-                  </RadarChart>
-                </ResponsiveContainer>
+          {/* Stats grid — 4 columns */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 12 }}>
+            <StatCard
+              icon={Zap}
+              label="Total XP"
+              color="#3B82F6"
+              value={dashboard?.total_xp ?? 0}
+              sparkData={[10, 14, 18, 22, 28, 32, 40, 45]}
+            />
+            <StatCard
+              icon={Flame}
+              label="Current Streak"
+              color="#F59E0B"
+              value={`${streak} days`}
+              sparkData={[3, 5, 4, 6, 8, 9, 11, 12]}
+            />
+            <StatCard
+              icon={Target}
+              label="Avg Accuracy"
+              color="#10B981"
+              value={`${dashboard?.overall_accuracy ?? 0}%`}
+              sparkData={[70, 72, 68, 76, 79, 82, 85, 88]}
+            />
+            <StatCard
+              icon={BookOpen}
+              label="Sessions"
+              color="#8B5CF6"
+              value={dashboard?.sessions_completed ?? 0}
+              sparkData={[42, 55, 48, 60, 72, 68, 79, 85]}
+            />
+          </div>
+
+          {/* Charts row */}
+          <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 12, marginBottom: 12 }}>
+            {/* Accuracy trend */}
+            <div className="glass" style={{ padding: 20 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+                <div>
+                  <h2 className="section-h">Accuracy trend</h2>
+                  <p style={{ fontSize: 13, color: "var(--text-2)", margin: "2px 0 0" }}>Last 7 sessions</p>
+                </div>
+                <span className="pill pill-blue" style={{ marginLeft: "auto" }}>+17 pts</span>
               </div>
-            )}
-          </motion.div>
-        </div>
+              <LineChart
+                data={chartAccuracyData}
+                xKey="d"
+                yKey="acc"
+                color="#3B82F6"
+                height={220}
+                yMin={40}
+                yMax={100}
+              />
+            </div>
 
-        {/* Recent Sessions */}
-        <motion.div variants={fadeUp} initial="hidden" animate="show"
-                    className="glass-card-static p-6 mt-6">
-          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-            <Clock className="w-5 h-5" style={{ color: "var(--info)" }} />
-            Recent Sessions
-          </h3>
-          {dashboard?.recent_sessions && dashboard.recent_sessions.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            {/* Topic mastery radar */}
+            <div className="glass" style={{ padding: 20 }}>
+              <h2 className="section-h" style={{ marginBottom: 16 }}>Topic mastery</h2>
+              <RadarChart
+                data={radarData}
+                valueKey="mastery"
+                labelKey="topic"
+                size={240}
+                color="#3B82F6"
+              />
+            </div>
+          </div>
+
+          {/* AI recommendation banner */}
+          <div
+            className="glass"
+            style={{
+              padding: 18,
+              marginBottom: 12,
+              display: "flex",
+              gap: 14,
+              alignItems: "center",
+              borderLeft: "3px solid var(--accent)",
+            }}
+          >
+            <div
+              className="stat-icon"
+              style={{ background: "var(--accent-soft)", color: "var(--accent)", flexShrink: 0 }}
+            >
+              <Sparkles size={18} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 500, fontSize: 14 }}>
+                The AI engine recommends focusing on <strong>{weakestTopic}</strong> next.
+              </div>
+              <div style={{ fontSize: 12, color: "var(--text-2)", marginTop: 2 }}>
+                Personalized path based on your recent performance.
+              </div>
+            </div>
+            <Link href="/session">
+              <button className="btn btn-ghost" style={{ height: 36, whiteSpace: "nowrap" }}>
+                Start track →
+              </button>
+            </Link>
+          </div>
+
+          {/* Recent sessions table */}
+          <div className="glass" style={{ padding: 0, overflow: "hidden" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "18px 20px 12px" }}>
+              <h2 className="section-h">Recent sessions</h2>
+              <Link href="/analytics">
+                <button className="btn btn-ghost" style={{ height: 30, fontSize: 12 }}>
+                  View all
+                </button>
+              </Link>
+            </div>
+
+            {dashboard?.recent_sessions && dashboard.recent_sessions.length > 0 ? (
+              <table className="table">
                 <thead>
-                  <tr style={{ color: "var(--text-muted)" }}>
-                    <th className="text-left pb-3 font-medium">Date</th>
-                    <th className="text-left pb-3 font-medium">Questions</th>
-                    <th className="text-left pb-3 font-medium">Accuracy</th>
-                    <th className="text-left pb-3 font-medium">Reward</th>
+                  <tr>
+                    <th>Date</th>
+                    <th>Topic</th>
+                    <th>Score</th>
+                    <th>Difficulty</th>
+                    <th>XP</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y" style={{ borderColor: "var(--border-glass)" }}>
+                <tbody>
                   {dashboard.recent_sessions.map((s) => (
                     <tr key={s.id}>
-                      <td className="py-3">{new Date(s.date).toLocaleDateString()}</td>
-                      <td className="py-3">{s.questions}</td>
-                      <td className="py-3">
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                          s.accuracy >= 80 ? "badge-easy" : s.accuracy >= 50 ? "badge-medium" : "badge-hard"
-                        }`}>
-                          {s.accuracy}%
-                        </span>
+                      <td>{new Date(s.date).toLocaleDateString()}</td>
+                      <td style={{ color: "var(--text-2)" }}>—</td>
+                      <td>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <span style={{ minWidth: 36 }}>{s.accuracy}%</span>
+                          <div className="pbar" style={{ width: 80 }}>
+                            <span style={{ width: `${s.accuracy}%` }} />
+                          </div>
+                        </div>
                       </td>
-                      <td className="py-3" style={{ color: s.reward >= 0 ? "var(--success)" : "var(--error)" }}>
-                        {s.reward >= 0 ? "+" : ""}{s.reward.toFixed(1)}
+                      <td>
+                        <DifficultyBadge level={s.accuracy >= 80 ? "Easy" : s.accuracy >= 50 ? "Medium" : "Hard"} />
+                      </td>
+                      <td style={{ color: "var(--amber)", fontWeight: 600 }}>
+                        +{Math.round(s.reward * 10)}
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            </div>
-          ) : (
-            <p className="text-sm" style={{ color: "var(--text-muted)" }}>No sessions yet. Start your first one!</p>
-          )}
-        </motion.div>
-      </main>
-    </div>
+            ) : (
+              <div style={{ padding: "24px 20px", color: "var(--text-3)", fontSize: 14 }}>
+                No sessions yet. Start your first one!
+              </div>
+            )}
+          </div>
+
+        </div>
+      </div>
+    </AppLayout>
   );
 }
