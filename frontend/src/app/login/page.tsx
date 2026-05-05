@@ -3,9 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { motion } from "framer-motion";
 import { useAuth } from "@/lib/auth-context";
-import { Brain, Eye, EyeOff, Loader2 } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -33,96 +32,176 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 relative" style={{ background: "var(--bg-primary)" }}>
-      {/* Background glow */}
-      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] rounded-full opacity-15 blur-[120px]"
-           style={{ background: "var(--gradient-primary)" }} />
+    <div
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "24px",
+        background: "var(--bg)",
+        position: "relative",
+        overflow: "hidden",
+      }}
+    >
+      {/* Background glow blobs */}
+      <div
+        style={{
+          position: "absolute",
+          top: "20%",
+          left: "15%",
+          width: 480,
+          height: 480,
+          borderRadius: "50%",
+          background: "radial-gradient(circle, rgba(59,130,246,0.18) 0%, transparent 70%)",
+          pointerEvents: "none",
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          bottom: "10%",
+          right: "10%",
+          width: 380,
+          height: 380,
+          borderRadius: "50%",
+          background: "radial-gradient(circle, rgba(139,92,246,0.14) 0%, transparent 70%)",
+          pointerEvents: "none",
+        }}
+      />
 
-      <motion.div
-        initial={{ opacity: 0, y: 30 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6 }}
-        className="glass-card-static p-8 md:p-10 w-full max-w-md relative"
+      {/* Shell */}
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 400,
+          padding: 24,
+          position: "relative",
+          zIndex: 1,
+        }}
+        className="slide-up-in"
       >
-        {/* Logo */}
-        <div className="flex items-center justify-center gap-2 mb-8">
-          <div className="w-10 h-10 rounded-lg flex items-center justify-center"
-               style={{ background: "var(--gradient-primary)" }}>
-            <Brain className="w-5 h-5 text-white" />
+        {/* Brand + heading */}
+        <div style={{ textAlign: "center", marginBottom: 28 }}>
+          <div
+            style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, marginBottom: 16 }}
+          >
+            <div className="brand-mark">N</div>
+            <span style={{ fontWeight: 600, fontSize: 15 }}>NRL Adaptive</span>
           </div>
-          <span className="text-xl font-bold">
-            NRL Adaptive Learning System
-          </span>
+          <h1 style={{ fontSize: 24, fontWeight: 600, margin: "0 0 6px", letterSpacing: "-0.02em" }}>
+            Welcome back
+          </h1>
+          <p style={{ fontSize: 14, color: "var(--text-2)", margin: 0 }}>
+            Sign in to continue your streak
+          </p>
         </div>
 
-        <h1 className="text-2xl font-bold text-center mb-2">Welcome back</h1>
-        <p className="text-center mb-8" style={{ color: "var(--text-secondary)" }}>
-          Sign in to continue learning
-        </p>
-
-        {error && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            className="mb-6 p-3 rounded-lg text-sm text-red-300"
-            style={{ background: "var(--error-glow)", border: "1px solid rgba(239, 68, 68, 0.3)" }}
-          >
-            {error}
-          </motion.div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-5">
-          <div>
-            <label className="block text-sm font-medium mb-2" style={{ color: "var(--text-secondary)" }}>
-              Email
-            </label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="input-field"
-              placeholder="you@example.com"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-2" style={{ color: "var(--text-secondary)" }}>
-              Password
-            </label>
-            <div className="relative">
-              <input
-                type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="input-field !pr-12"
-                placeholder="••••••••"
-                required
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-4 top-1/2 -translate-y-1/2"
-                style={{ color: "var(--text-muted)" }}
-              >
-                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-              </button>
+        {/* Card */}
+        <div className="glass" style={{ padding: 28 }}>
+          {/* Error banner */}
+          {error && (
+            <div
+              className="fade-in"
+              style={{
+                background: "rgba(239,68,68,0.1)",
+                border: "1px solid rgba(239,68,68,0.3)",
+                borderRadius: 10,
+                padding: "10px 14px",
+                fontSize: 13,
+                color: "#fca5a5",
+                marginBottom: 20,
+              }}
+            >
+              {error}
             </div>
-          </div>
+          )}
 
-          <button type="submit" disabled={loading} className="btn-primary w-full flex items-center justify-center gap-2 !mt-8">
-            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : null}
-            {loading ? "Signing in..." : "Sign In"}
-          </button>
-        </form>
+          <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            {/* Email */}
+            <div className="field">
+              <label className="field-label" htmlFor="email">Email</label>
+              <input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="input"
+                placeholder="you@example.com"
+                required
+                autoComplete="email"
+              />
+            </div>
 
-        <p className="text-center mt-6 text-sm" style={{ color: "var(--text-muted)" }}>
-          Don&apos;t have an account?{" "}
-          <Link href="/register" className="font-medium" style={{ color: "var(--accent-primary)" }}>
-            Create one
+            {/* Password */}
+            <div className="field">
+              <label className="field-label" htmlFor="password">Password</label>
+              <div style={{ position: "relative" }}>
+                <input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="input"
+                  placeholder="••••••••"
+                  required
+                  style={{ paddingRight: 44 }}
+                  autoComplete="current-password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  style={{
+                    position: "absolute",
+                    right: 12,
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    background: "none",
+                    border: "none",
+                    padding: 4,
+                    cursor: "pointer",
+                    color: "var(--text-3)",
+                    display: "flex",
+                    alignItems: "center",
+                  }}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </div>
+
+            {/* Submit */}
+            <button
+              type="submit"
+              disabled={loading}
+              className="btn btn-primary btn-lg"
+              style={{ width: "100%", marginTop: 8 }}
+            >
+              {loading && <span className="spinner" style={{ marginRight: 4 }} />}
+              {loading ? "Signing in…" : "Sign in"}
+            </button>
+          </form>
+
+          {/* Register link */}
+          <p style={{ textAlign: "center", fontSize: 13, color: "var(--text-3)", marginTop: 18, marginBottom: 0 }}>
+            Don&apos;t have an account?{" "}
+            <Link href="/register" style={{ color: "var(--accent)", textDecoration: "none", fontWeight: 500 }}>
+              Create one
+            </Link>
+          </p>
+        </div>
+
+        {/* Back link */}
+        <p style={{ textAlign: "center", marginTop: 16, fontSize: 13 }}>
+          <Link
+            href="/"
+            style={{ color: "var(--text-3)", textDecoration: "none" }}
+          >
+            ← Back to home
           </Link>
         </p>
-      </motion.div>
+      </div>
     </div>
   );
 }
