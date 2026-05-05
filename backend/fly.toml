@@ -26,6 +26,8 @@ kill_timeout   = 5
   RATE_LIMIT_ENABLED   = "true"
   RATE_LIMIT_DEFAULT   = "120/minute"
   RATE_LIMIT_AUTH      = "10/minute"
+  # Set via flyctl secrets set CORS_ORIGINS=https://your-frontend.vercel.app
+  CORS_ORIGINS         = "https://nrl-adaptive.vercel.app"
 
 [processes]
   app = "uvicorn app.main:app --host 0.0.0.0 --port 8000"
