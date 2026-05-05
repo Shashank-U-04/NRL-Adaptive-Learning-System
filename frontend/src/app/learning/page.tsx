@@ -2,19 +2,35 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
-import Navbar from "@/components/Navbar";
 import { useAuth } from "@/lib/auth-context";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { learningApi } from "@/lib/api";
+import AppLayout from "@/components/AppLayout";
 import ModuleCard from "@/features/learning/components/ModuleCard";
 import LessonViewer from "@/features/learning/components/LessonViewer";
 import LabPanel from "@/features/learning/components/LabPanel";
 import QuizEngine from "@/features/learning/components/QuizEngine";
 import type { Module, ModuleSummary, Lesson, Lab } from "@/features/learning/types";
-import { Loader2, AlertCircle, RefreshCcw, Trophy, CheckCircle2, Terminal, BookOpen } from "lucide-react";
+import {
+  Loader2, AlertCircle, RefreshCcw, Trophy, CheckCircle2,
+  Terminal, BookOpen, Grid3x3, Clock,
+} from "lucide-react";
 
 type ViewState = "roadmap" | "module-detail" | "lesson" | "lab" | "quiz";
+
+// ── Topic colours ────────────────────────────────────────
+const TOPIC_COLORS: Record<string, string> = {
+  "network-security": "#3B82F6",
+  "web-security": "#10B981",
+  "cryptography": "#8B5CF6",
+  "malware-analysis": "#EF4444",
+  "forensics": "#F59E0B",
+  "social-engineering": "#F43F5E",
+  "osint": "#14B8A6",
+};
+function topicColor(id: string): string {
+  return TOPIC_COLORS[id] ?? "#3B82F6";
+}
 
 export default function LearningPage() {
   const { isAuthenticated, isLoading: authLoading, user } = useAuth();
@@ -22,42 +38,39 @@ export default function LearningPage() {
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const selectedTopic = searchParams.get("topic");
-  
+
   const [activeLesson, setActiveLesson] = useState<Lesson | null>(null);
   const [activeLab, setActiveLab] = useState<Lab | null>(null);
   const [viewState, setViewState] = useState<ViewState>("roadmap");
+  const [topicFilter, setTopicFilter] = useState<string>("all");
 
   // ── Queries ───────────────────────────────────────────
-  
-  // Fetch modules list
-  const { 
-    data: modulesData, 
-    isLoading: modulesLoading, 
+
+  const {
+    data: modulesData,
+    isLoading: modulesLoading,
     error: modulesError,
-    refetch: refetchModules
+    refetch: refetchModules,
   } = useQuery({
     queryKey: ["learning-modules"],
     queryFn: () => learningApi.getModules(),
     enabled: isAuthenticated && !selectedTopic,
   });
 
-  // Fetch module detail
   const {
     data: detailData,
     isLoading: detailLoading,
     error: detailError,
-    refetch: refetchDetail
+    refetch: refetchDetail,
   } = useQuery({
     queryKey: ["learning-module", selectedTopic],
     queryFn: () => learningApi.getModuleDetail(selectedTopic!),
     enabled: isAuthenticated && !!selectedTopic,
   });
 
-  // Fetch user progress
   const {
     data: progressData,
-    isLoading: progressLoading,
-    refetch: refetchProgress
+    refetch: refetchProgress,
   } = useQuery({
     queryKey: ["learning-progress", selectedTopic],
     queryFn: () => learningApi.getProgress(selectedTopic!),
@@ -65,13 +78,13 @@ export default function LearningPage() {
   });
 
   // ── Mutations ──────────────────────────────────────────
-  
+
   const updateProgressMutation = useMutation({
-    mutationFn: (data: { lesson_id?: string; lab_id?: string; quiz_score?: number; quiz_stats?: any }) => 
+    mutationFn: (data: { lesson_id?: string; lab_id?: string; quiz_score?: number; quiz_stats?: any }) =>
       learningApi.updateProgress({ topic_id: selectedTopic!, ...data }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["learning-progress", selectedTopic] });
-    }
+    },
   });
 
   useEffect(() => {
@@ -97,10 +110,9 @@ export default function LearningPage() {
   const handleLessonComplete = async (lessonId: string) => {
     const startTime = sessionStorage.getItem(`lesson_start_${lessonId}`);
     const timeSpent = startTime ? Math.round((Date.now() - parseInt(startTime)) / 1000) : 0;
-    
-    await updateProgressMutation.mutateAsync({ 
+    await updateProgressMutation.mutateAsync({
       lesson_id: lessonId,
-      quiz_stats: { time_spent_seconds: timeSpent } // Store time spent in stats
+      quiz_stats: { time_spent_seconds: timeSpent },
     });
     setViewState("module-detail");
   };
@@ -111,10 +123,7 @@ export default function LearningPage() {
   };
 
   const handleQuizComplete = async (score: number, stats: any) => {
-    await updateProgressMutation.mutateAsync({ 
-      quiz_score: score, 
-      quiz_stats: stats 
-    });
+    await updateProgressMutation.mutateAsync({ quiz_score: score, quiz_stats: stats });
     handleBackToRoadmap();
   };
 
@@ -124,133 +133,257 @@ export default function LearningPage() {
     }
   }, [viewState, activeLesson]);
 
-  const loading = modulesLoading || detailLoading || authLoading;
-  const error = (modulesError || detailError || (detailData && !detailData.success)) ? 
-                "Failed to load learning data. Please try again." : null;
-
   if (authLoading) return null;
 
-  const modules = modulesData?.data?.modules || [];
-  const activeModule = detailData?.data?.module;
-  const progress = progressData || { completed_lessons: [], completed_labs: [], quiz_scores: [], is_completed: false };
+  const modules: ModuleSummary[] = modulesData?.data?.modules ?? [];
+  const activeModule: Module | undefined = detailData?.data?.module;
+  const progress = progressData ?? {
+    completed_lessons: [],
+    completed_labs: [],
+    quiz_scores: [],
+    is_completed: false,
+  };
+  const loading = modulesLoading || detailLoading;
+  const hasError = !!(modulesError || detailError || (detailData && !detailData.success));
+
+  // Unique topic list for chips — use id as topic identifier since ModuleSummary has no topic field
+  const allTopics = Array.from(new Set(modules.map((m) => (m as any).topic ?? m.id)));
+  const visibleModules =
+    topicFilter === "all"
+      ? modules
+      : modules.filter((m) => ((m as any).topic ?? m.id) === topicFilter);
 
   return (
-    <div className="min-h-screen text-slate-200" style={{ background: "var(--bg-primary)" }}>
-      <Navbar />
-      
-      <main className="max-w-7xl mx-auto px-4 pt-24 pb-12">
-        {loading && viewState === "roadmap" && (
-          <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4">
-            <Loader2 className="w-10 h-10 animate-spin text-indigo-500" />
-            <p className="text-slate-400 font-medium animate-pulse">Initializing learning environment...</p>
-          </div>
-        )}
+    <AppLayout>
+      <div className="scroll-y" style={{ height: "100%" }}>
+        <div style={{ maxWidth: 1280, margin: "0 auto", padding: "32px 32px 40px" }}>
 
-        {error && (
-          <div className="min-h-[60vh] flex flex-col items-center justify-center gap-6 text-center max-w-md mx-auto">
-            <div className="w-20 h-20 rounded-full bg-rose-500/10 flex items-center justify-center border border-rose-500/20">
-              <AlertCircle className="w-10 h-10 text-rose-500" />
-            </div>
-            <div>
-              <h3 className="text-2xl font-bold mb-2 text-white">System Error</h3>
-              <p className="text-slate-400 leading-relaxed">{error}</p>
-            </div>
-            <button
-              onClick={() => selectedTopic ? refetchDetail() : refetchModules()}
-              className="flex items-center gap-2 px-6 py-2 rounded-xl bg-slate-800 text-slate-200 border border-slate-700 hover:bg-slate-700 transition-colors"
-            >
-              <RefreshCcw className="w-4 h-4" /> Try Again
-            </button>
-          </div>
-        )}
-
-        {!loading && !error && viewState === "roadmap" && (
-          <>
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-12">
-              <h1 className="text-4xl font-bold mb-4 bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">
-                Learning Roadmap
-              </h1>
-              <p className="text-slate-400 max-w-2xl text-lg leading-relaxed">
-                Master cybersecurity through structured modules, interactive lessons, and hands-on laboratory simulations.
-              </p>
-            </motion.div>
-
-            {modules.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                {modules.map((module: ModuleSummary, index: number) => (
-                  <motion.div key={module.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.1 }}>
-                    <ModuleCard module={module} onStart={openModule} />
-                  </motion.div>
-                ))}
+          {/* ── Roadmap view ─────────────────────────── */}
+          {viewState === "roadmap" && (
+            <>
+              {/* Header */}
+              <div style={{ marginBottom: 24 }}>
+                <h1 className="page-h1">Learning modules</h1>
+                <p className="page-sub">
+                  Master cybersecurity through structured modules, interactive lessons, and hands-on labs.
+                </p>
               </div>
-            ) : (
-              <div className="py-20 text-center rounded-3xl border border-dashed border-slate-800 bg-slate-900/20">
-                <p className="text-slate-500 text-lg italic">No learning modules available yet. Check back soon!</p>
-              </div>
-            )}
-          </>
-        )}
 
-        <AnimatePresence mode="wait">
+              {/* Topic chips */}
+              {modules.length > 0 && (
+                <div className="scroll-x" style={{ display: "flex", gap: 8, paddingBottom: 8, marginBottom: 16 }}>
+                  <button
+                    className={`chip${topicFilter === "all" ? " active" : ""}`}
+                    onClick={() => setTopicFilter("all")}
+                  >
+                    All
+                  </button>
+                  {allTopics.map((t) => (
+                    <button
+                      key={t}
+                      className={`chip${topicFilter === t ? " active" : ""}`}
+                      onClick={() => setTopicFilter(t)}
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Loading */}
+              {loading && (
+                <div style={{ minHeight: 320, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12 }}>
+                  <Loader2 style={{ width: 32, height: 32, color: "var(--accent)", animation: "spin 0.7s linear infinite" }} />
+                  <p style={{ color: "var(--text-3)", fontSize: 13 }}>Initializing learning environment…</p>
+                </div>
+              )}
+
+              {/* Error */}
+              {!loading && hasError && (
+                <div style={{ minHeight: 320, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16, textAlign: "center" }}>
+                  <div style={{ width: 64, height: 64, borderRadius: 999, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", display: "grid", placeItems: "center" }}>
+                    <AlertCircle style={{ width: 28, height: 28, color: "var(--red)" }} />
+                  </div>
+                  <p style={{ color: "var(--text-2)", fontSize: 14 }}>Failed to load learning data. Please try again.</p>
+                  <button className="btn btn-ghost" onClick={() => refetchModules()}>
+                    <RefreshCcw style={{ width: 14, height: 14 }} /> Try Again
+                  </button>
+                </div>
+              )}
+
+              {/* Module grid */}
+              {!loading && !hasError && (
+                visibleModules.length > 0 ? (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
+                    {visibleModules.map((module) => {
+                      const color = topicColor((module as any).topic ?? module.id ?? "");
+                      const moduleProgress = module.progress ?? 0;
+                      const difficulty = module.difficulty ?? "intermediate";
+                      const type = (module as any).type ?? "text";
+                      const estimatedTime = (module as any).estimated_minutes ?? (module as any).duration ?? 20;
+
+                      const TypeIcon =
+                        type === "lab" ? Terminal : type === "text" ? BookOpen : Grid3x3;
+
+                      return (
+                        <div key={module.id} className="glass glass-hover" style={{ padding: 14, display: "flex", flexDirection: "column", gap: 0, cursor: "default" }}>
+                          {/* Thumbnail */}
+                          <div
+                            className="mod-thumb"
+                            style={{
+                              background: `linear-gradient(135deg, ${color}28, ${color}08)`,
+                              marginBottom: 12,
+                              position: "relative",
+                            }}
+                          >
+                            {/* Topic label */}
+                            <span
+                              style={{
+                                position: "absolute",
+                                top: 8,
+                                left: 8,
+                                fontSize: 10,
+                                color: color,
+                                background: `${color}22`,
+                                padding: "2px 8px",
+                                borderRadius: 999,
+                                border: `1px solid ${color}44`,
+                                fontWeight: 500,
+                                zIndex: 1,
+                              }}
+                            >
+                              {(module as any).topic ?? module.id}
+                            </span>
+                            {/* Icon */}
+                            <div
+                              style={{
+                                width: 44,
+                                height: 44,
+                                borderRadius: 10,
+                                background: `${color}22`,
+                                display: "grid",
+                                placeItems: "center",
+                                position: "relative",
+                                zIndex: 1,
+                              }}
+                            >
+                              <TypeIcon style={{ width: 20, height: 20, color }} />
+                            </div>
+                          </div>
+
+                          {/* Pills row */}
+                          <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                            <span className="pill pill-neutral">{type}</span>
+                            <span
+                              className={`pill ${
+                                difficulty === "beginner"
+                                  ? "pill-easy"
+                                  : difficulty === "advanced"
+                                  ? "pill-hard"
+                                  : "pill-medium"
+                              }`}
+                            >
+                              {difficulty}
+                            </span>
+                          </div>
+
+                          {/* Title */}
+                          <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 8, lineHeight: 1.4 }}>
+                            {module.title}
+                          </div>
+
+                          {/* Time */}
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-3)", marginBottom: 10 }}>
+                            <Clock style={{ width: 12, height: 12 }} />
+                            {estimatedTime} min
+                          </div>
+
+                          {/* Progress bar */}
+                          {moduleProgress > 0 && (
+                            <div style={{ marginBottom: 10 }}>
+                              <div className="pbar green">
+                                <span style={{ width: `${moduleProgress}%` }} />
+                              </div>
+                            </div>
+                          )}
+
+                          {/* CTA button */}
+                          <button
+                            className={`btn ${moduleProgress >= 100 ? "btn-ghost" : moduleProgress > 0 ? "btn-primary" : "btn-ghost"}`}
+                            style={{ width: "100%", marginTop: "auto" }}
+                            onClick={() => openModule(module.id)}
+                          >
+                            {moduleProgress >= 100 ? "Review" : moduleProgress > 0 ? "Continue" : "Start"}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div style={{ padding: "60px 0", textAlign: "center", color: "var(--text-3)", fontSize: 13 }}>
+                    No learning modules available yet. Check back soon!
+                  </div>
+                )
+              )}
+            </>
+          )}
+
+          {/* ── Module detail ─────────────────────────── */}
           {viewState === "module-detail" && activeModule && (
-            <motion.div key="module-detail" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <ModuleView 
-                module={activeModule} 
-                progress={progress}
-                onBack={handleBackToRoadmap} 
-                onStartLesson={(l) => { setActiveLesson(l); setViewState("lesson"); }}
-                onStartLab={(lab) => { setActiveLab(lab); setViewState("lab"); }}
-                onStartQuiz={() => setViewState("quiz")}
-              />
-            </motion.div>
+            <ModuleView
+              module={activeModule}
+              progress={progress}
+              onBack={handleBackToRoadmap}
+              onStartLesson={(l) => { setActiveLesson(l); setViewState("lesson"); }}
+              onStartLab={(lab) => { setActiveLab(lab); setViewState("lab"); }}
+              onStartQuiz={() => setViewState("quiz")}
+            />
           )}
 
+          {/* ── Lesson viewer ─────────────────────────── */}
           {viewState === "lesson" && activeLesson && (
-            <motion.div key="lesson" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-              <LessonViewer 
-                lesson={activeLesson} 
-                onBack={() => setViewState("module-detail")} 
-                onComplete={() => handleLessonComplete(activeLesson.id)} 
-              />
-            </motion.div>
+            <LessonViewer
+              lesson={activeLesson}
+              onBack={() => setViewState("module-detail")}
+              onComplete={() => handleLessonComplete(activeLesson.id)}
+            />
           )}
 
+          {/* ── Lab panel ─────────────────────────────── */}
           {viewState === "lab" && activeLab && (
-            <motion.div key="lab" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 1.05 }}>
-              <LabPanel 
-                lab={activeLab} 
-                onBack={() => setViewState("module-detail")} 
-                onComplete={() => handleLabComplete(activeLab.id)} 
-              />
-            </motion.div>
+            <LabPanel
+              lab={activeLab}
+              onBack={() => setViewState("module-detail")}
+              onComplete={() => handleLabComplete(activeLab.id)}
+            />
           )}
 
+          {/* ── Quiz engine ───────────────────────────── */}
           {viewState === "quiz" && activeModule && (
-            <motion.div key="quiz" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <QuizEngine 
-                questions={activeModule.quizPool} 
-                title={`${activeModule.title} - Final Quiz`}
-                onBack={() => setViewState("module-detail")}
-                onComplete={(score, stats) => handleQuizComplete(score, stats)}
-              />
-            </motion.div>
+            <QuizEngine
+              questions={activeModule.quizPool}
+              title={`${activeModule.title} - Final Quiz`}
+              onBack={() => setViewState("module-detail")}
+              onComplete={(score, stats) => handleQuizComplete(score, stats)}
+            />
           )}
-        </AnimatePresence>
-      </main>
-    </div>
+
+        </div>
+      </div>
+    </AppLayout>
   );
 }
 
-// Internal Module View Component
-function ModuleView({ 
-  module, 
+// ── Internal Module View ─────────────────────────────────
+function ModuleView({
+  module,
   progress,
-  onBack, 
-  onStartLesson, 
-  onStartLab, 
-  onStartQuiz 
-}: { 
-  module: Module; 
+  onBack,
+  onStartLesson,
+  onStartLab,
+  onStartQuiz,
+}: {
+  module: Module;
   progress: any;
   onBack: () => void;
   onStartLesson: (l: Lesson) => void;
@@ -258,172 +391,169 @@ function ModuleView({
   onStartQuiz: () => void;
 }) {
   const [activeTab, setActiveTab] = useState<"lessons" | "labs" | "quiz">("lessons");
-
-  const completedLessons = progress?.completed_lessons || [];
-  const completedLabs = progress?.completed_labs || [];
+  const completedLessons: string[] = progress?.completed_lessons ?? [];
+  const completedLabs: string[] = progress?.completed_labs ?? [];
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-        <div className="space-y-4">
-          <button 
-            onClick={onBack}
-            className="text-indigo-400 hover:text-indigo-300 transition-colors flex items-center gap-2 text-sm font-bold uppercase tracking-widest"
-          >
-            ← Back to Roadmap
-          </button>
-          <h1 className="text-4xl font-bold text-white">{module.title}</h1>
-          <p className="text-slate-400 max-w-3xl leading-relaxed">{module.description}</p>
-        </div>
-        
-        <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 shadow-inner flex gap-8">
-          <div className="text-center">
-            <p className="text-[10px] text-slate-500 uppercase font-bold tracking-tighter mb-1">Lessons</p>
-            <p className="text-xl font-mono text-indigo-400">{completedLessons.length}/{module.lessons.length}</p>
+    <div>
+      {/* Back + header */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 16, marginBottom: 24 }}>
+        <button
+          className="btn btn-ghost"
+          style={{ alignSelf: "flex-start", height: 32, padding: "0 12px", fontSize: 12 }}
+          onClick={onBack}
+        >
+          ← Back to Roadmap
+        </button>
+        <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16 }}>
+          <div>
+            <h1 className="page-h1" style={{ marginBottom: 6 }}>{module.title}</h1>
+            <p className="page-sub">{module.description}</p>
           </div>
-          <div className="text-center">
-            <p className="text-[10px] text-slate-500 uppercase font-bold tracking-tighter mb-1">Labs</p>
-            <p className="text-xl font-mono text-teal-400">{completedLabs.length}/{module.labs.length}</p>
-          </div>
-          <div className="text-center">
-            <p className="text-[10px] text-slate-500 uppercase font-bold tracking-tighter mb-1">Status</p>
-            <p className={`text-xl font-mono italic ${progress?.is_completed ? "text-emerald-400" : "text-amber-400"}`}>
-              {progress?.is_completed ? "MASTERED" : "ACTIVE"}
-            </p>
+          {/* Progress summary */}
+          <div className="glass" style={{ padding: "12px 20px", display: "flex", gap: 20, flexShrink: 0 }}>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 10, color: "var(--text-3)", textTransform: "uppercase", fontWeight: 600, marginBottom: 2 }}>Lessons</div>
+              <div style={{ fontSize: 18, fontWeight: 600, color: "var(--accent)" }}>{completedLessons.length}/{module.lessons.length}</div>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 10, color: "var(--text-3)", textTransform: "uppercase", fontWeight: 600, marginBottom: 2 }}>Labs</div>
+              <div style={{ fontSize: 18, fontWeight: 600, color: "var(--teal)" }}>{completedLabs.length}/{module.labs.length}</div>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 10, color: "var(--text-3)", textTransform: "uppercase", fontWeight: 600, marginBottom: 2 }}>Status</div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: progress?.is_completed ? "var(--green)" : "var(--amber)" }}>
+                {progress?.is_completed ? "MASTERED" : "ACTIVE"}
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="flex gap-4 border-b border-slate-800 pb-px">
-        {["lessons", "labs", "quiz"].map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab as any)}
-            className={`px-6 py-4 text-sm font-bold uppercase tracking-widest transition-all relative ${
-              activeTab === tab ? "text-indigo-400" : "text-slate-500 hover:text-slate-300"
-            }`}
-          >
-            {tab}
-            {activeTab === tab && (
-              <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-400 shadow-[0_0_10px_rgba(129,140,248,0.5)]" />
-            )}
+      {/* Tabs */}
+      <div className="tabs" style={{ marginBottom: 20 }}>
+        {(["lessons", "labs", "quiz"] as const).map((t) => (
+          <button key={t} className={`tab${activeTab === t ? " active" : ""}`} onClick={() => setActiveTab(t)}>
+            {t.charAt(0).toUpperCase() + t.slice(1)}
           </button>
         ))}
       </div>
 
-      <div className="pt-4">
-        {activeTab === "lessons" && (
-          <div className="grid gap-4">
-            {module.lessons.map((lesson, i) => {
-              const isDone = completedLessons.includes(lesson.id);
-              return (
-                <motion.div 
-                  key={lesson.id}
-                  onClick={() => onStartLesson(lesson)}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: i * 0.1 }}
-                  className={`group flex items-center justify-between p-6 rounded-2xl border transition-all cursor-pointer ${
-                    isDone 
-                      ? "bg-emerald-500/5 border-emerald-500/20 hover:bg-emerald-500/10" 
-                      : "bg-slate-900/40 border-slate-800 hover:border-indigo-500/30 hover:bg-slate-900/60"
-                  }`}
+      {/* Lessons tab */}
+      {activeTab === "lessons" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {module.lessons.map((lesson, i) => {
+            const isDone = completedLessons.includes(lesson.id);
+            return (
+              <div
+                key={lesson.id}
+                className="glass glass-hover"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "14px 18px",
+                  cursor: "pointer",
+                  background: isDone ? "rgba(16,185,129,0.06)" : undefined,
+                  borderColor: isDone ? "rgba(16,185,129,0.25)" : undefined,
+                }}
+                onClick={() => onStartLesson(lesson)}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                  <div
+                    style={{
+                      width: 34,
+                      height: 34,
+                      borderRadius: 999,
+                      border: `1px solid ${isDone ? "rgba(16,185,129,0.35)" : "var(--line)"}`,
+                      background: isDone ? "rgba(16,185,129,0.15)" : "rgba(255,255,255,0.03)",
+                      display: "grid",
+                      placeItems: "center",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: isDone ? "var(--green)" : "var(--text-3)",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {isDone ? <CheckCircle2 style={{ width: 16, height: 16 }} /> : String(i + 1).padStart(2, "0")}
+                  </div>
+                  <span style={{ fontSize: 14, fontWeight: 500, color: isDone ? "#BBF7D0" : "var(--text)" }}>
+                    {lesson.title}
+                  </span>
+                </div>
+                <span style={{ fontSize: 11, color: "var(--text-3)" }}>
+                  {lesson.checkpoints.length} checkpoints
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Labs tab */}
+      {activeTab === "labs" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {module.labs.map((lab) => {
+            const isDone = completedLabs.includes(lab.id);
+            return (
+              <div
+                key={lab.id}
+                className="glass"
+                style={{
+                  padding: 20,
+                  background: isDone ? "rgba(16,185,129,0.05)" : undefined,
+                  borderColor: isDone ? "rgba(16,185,129,0.2)" : undefined,
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                  <h3 style={{ fontSize: 16, fontWeight: 500, margin: 0 }}>{lab.title}</h3>
+                  {isDone && <CheckCircle2 style={{ width: 16, height: 16, color: "var(--green)" }} />}
+                </div>
+                <p style={{ color: "var(--text-2)", fontSize: 13, marginBottom: 14, margin: "0 0 14px" }}>{lab.description}</p>
+                <button
+                  className={`btn ${isDone ? "btn-ghost" : "btn-primary"}`}
+                  onClick={() => onStartLab(lab)}
                 >
-                  <div className="flex items-center gap-4">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-mono border ${
-                      isDone ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" : "bg-slate-800 text-slate-500 border-slate-700"
-                    }`}>
-                      {isDone ? <CheckCircle2 className="w-5 h-5" /> : String(i + 1).padStart(2, '0')}
-                    </div>
-                    <h3 className={`text-lg font-semibold transition-colors ${isDone ? "text-emerald-100" : "text-slate-200 group-hover:text-white"}`}>
-                      {lesson.title}
-                    </h3>
-                  </div>
-                  <div className="flex items-center gap-4">
-                     <span className={`text-[10px] uppercase font-bold px-2 py-1 rounded border ${
-                       isDone ? "text-emerald-500 bg-emerald-500/10 border-emerald-500/20" : "text-slate-600 bg-slate-950 border-slate-800"
-                     }`}>
-                       {lesson.checkpoints.length} Checkpoints
-                     </span>
-                     <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
-                       isDone ? "bg-emerald-500 text-white" : "bg-indigo-500/10 text-indigo-400 group-hover:bg-indigo-500 group-hover:text-white"
-                     }`}>
-                       →
-                     </div>
-                  </div>
-                </motion.div>
-              );
-            })}
+                  <Terminal style={{ width: 14, height: 14 }} />
+                  {isDone ? "Redo Simulation" : "Initialize Simulation"}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Quiz tab */}
+      {activeTab === "quiz" && (
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "60px 0", gap: 20, textAlign: "center" }}>
+          <div
+            style={{
+              width: 72,
+              height: 72,
+              borderRadius: 999,
+              border: `1px solid ${progress?.is_completed ? "rgba(16,185,129,0.3)" : "rgba(59,130,246,0.3)"}`,
+              background: progress?.is_completed ? "rgba(16,185,129,0.08)" : "rgba(59,130,246,0.08)",
+              display: "grid",
+              placeItems: "center",
+            }}
+          >
+            <Trophy style={{ width: 32, height: 32, color: progress?.is_completed ? "var(--green)" : "var(--accent)" }} />
           </div>
-        )}
-        {activeTab === "labs" && (
-          <div className="grid gap-6">
-            {module.labs.map((lab, i) => {
-              const isDone = completedLabs.includes(lab.id);
-              return (
-                <motion.div 
-                  key={lab.id}
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className={`p-8 rounded-3xl border relative overflow-hidden group ${
-                    isDone ? "bg-emerald-500/5 border-emerald-500/20" : "bg-slate-900 border-slate-800"
-                  }`}
-                >
-                  <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-opacity">
-                    <span className="text-9xl font-black italic">{isDone ? "DONE" : "LAB"}</span>
-                  </div>
-                  <div className="relative z-10 space-y-4">
-                    <div className="flex items-center gap-3">
-                      <h3 className="text-2xl font-bold text-white">{lab.title}</h3>
-                      {isDone && <CheckCircle2 className="w-6 h-6 text-emerald-500" />}
-                    </div>
-                    <p className="text-slate-400 max-w-2xl">{lab.description}</p>
-                    <button 
-                      onClick={() => onStartLab(lab)}
-                      className={`px-6 py-2 rounded-xl border font-bold uppercase tracking-widest text-xs transition-all ${
-                        isDone 
-                          ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500 hover:text-white" 
-                          : "bg-teal-500/10 text-teal-400 border-teal-500/20 hover:bg-teal-500 hover:text-white"
-                      }`}
-                    >
-                      {isDone ? "Redo Simulation" : "Initialize Simulation"}
-                    </button>
-                  </div>
-                </motion.div>
-              );
-            })}
+          <div>
+            <h3 style={{ fontSize: 20, fontWeight: 600, margin: "0 0 6px" }}>
+              {progress?.is_completed ? "Module Mastered!" : "Final Module Assessment"}
+            </h3>
+            <p style={{ color: "var(--text-2)", fontSize: 13, maxWidth: 340, margin: 0 }}>
+              {progress?.is_completed
+                ? `Your highest score: ${Math.max(...progress.quiz_scores.map((s: any) => s.score))}%`
+                : `Test your knowledge of ${module.title} through a randomised adaptive assessment.`}
+            </p>
           </div>
-        )}
-        {activeTab === "quiz" && (
-          <div className="flex flex-col items-center justify-center py-20 text-center space-y-6">
-            <div className={`w-20 h-20 rounded-full flex items-center justify-center border ${
-              progress?.is_completed ? "bg-emerald-500/10 border-emerald-500/20" : "bg-indigo-500/10 border-indigo-500/20"
-            }`}>
-              <Trophy className={`w-10 h-10 ${progress?.is_completed ? "text-emerald-400" : "text-indigo-400"}`} />
-            </div>
-            <div>
-              <h3 className="text-2xl font-bold text-white mb-2">
-                {progress?.is_completed ? "Module Mastered!" : "Final Module Assessment"}
-              </h3>
-              <p className="text-slate-400 max-w-sm">
-                {progress?.is_completed 
-                  ? `Your highest score: ${Math.max(...progress.quiz_scores.map((s:any) => s.score))}%`
-                  : `Test your knowledge of ${module.title} through a randomized adaptive assessment.`}
-              </p>
-            </div>
-            <button 
-              onClick={onStartQuiz}
-              className={`px-8 py-3 rounded-xl font-bold uppercase tracking-widest text-xs border shadow-lg hover:scale-105 transition-all active:scale-95 ${
-                progress?.is_completed 
-                  ? "bg-emerald-600 text-white border-emerald-500 shadow-emerald-500/20" 
-                  : "bg-indigo-600 text-white border-indigo-500 shadow-indigo-500/20"
-              }`}
-            >
-              {progress?.is_completed ? "Retake Quiz" : "Start Quiz"}
-            </button>
-          </div>
-        )}
-      </div>
+          <button className="btn btn-primary btn-lg" onClick={onStartQuiz}>
+            {progress?.is_completed ? "Retake Quiz" : "Start Quiz"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

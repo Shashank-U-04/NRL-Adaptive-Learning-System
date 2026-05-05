@@ -1,17 +1,27 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { motion } from "framer-motion";
 import { leaderboardApi } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
-import Navbar from "@/components/Navbar";
-import { Trophy, Crown, Medal, Award } from "lucide-react";
+import AppLayout from "@/components/AppLayout";
+
+const PAGE_SIZE = 10;
+
+function initials(name: string): string {
+  return (name || "?")
+    .split(" ")
+    .map((w) => w[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+}
 
 export default function LeaderboardPage() {
   const { isAuthenticated, isLoading: authLoading, user } = useAuth();
   const router = useRouter();
+  const [page, setPage] = useState(0);
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) router.push("/login");
@@ -23,113 +33,193 @@ export default function LeaderboardPage() {
     enabled: isAuthenticated,
   });
 
-  if (authLoading || isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--bg-primary)" }}>
-        <div className="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: "var(--accent-primary)", borderTopColor: "transparent" }} />
-      </div>
-    );
-  }
+  if (authLoading) return null;
 
-  const getRankIcon = (rank: number) => {
-    if (rank === 1) return <Crown className="w-5 h-5 text-yellow-400" />;
-    if (rank === 2) return <Medal className="w-5 h-5 text-gray-300" />;
-    if (rank === 3) return <Medal className="w-5 h-5 text-amber-600" />;
-    return <span className="text-sm font-mono" style={{ color: "var(--text-muted)" }}>{rank}</span>;
-  };
+  // Normalise field names — API may return username or name, total_xp or xp, etc.
+  const entries = (leaderboard ?? []).map((e: any, i: number) => ({
+    rank: e.rank ?? e.id ?? i + 1,
+    name: e.username ?? e.name ?? "—",
+    xp: e.total_xp ?? e.xp ?? 0,
+    sessions: e.sessions_count ?? e.sessions_completed ?? e.sessions ?? 0,
+    accuracy: e.accuracy ?? 0,
+  }));
 
-  const getLevelColor = (level: string) => {
-    switch (level) {
-      case "advanced": return "#a78bfa";
-      case "intermediate": return "#f59e0b";
-      default: return "#22c55e";
-    }
-  };
+  const podium = entries.length >= 3 ? [entries[1], entries[0], entries[2]] : [];
+  // Table shows ALL entries paginated (including top 3)
+  const paginated = entries.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const totalPages = Math.ceil(entries.length / PAGE_SIZE);
+  const startIdx = page * PAGE_SIZE;
+  const endIdx = Math.min(startIdx + PAGE_SIZE, entries.length);
+
+  const podiumColors = ["#A1A1AA", "#F59E0B", "#A16207"];
+  const podiumSizes = [44, 52, 40];
 
   return (
-    <div className="min-h-screen" style={{ background: "var(--bg-primary)" }}>
-      <Navbar />
-      <main className="max-w-3xl mx-auto px-4 pt-24 pb-12">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
-          <h1 className="text-3xl font-bold flex items-center gap-3">
-            <Trophy className="w-8 h-8" style={{ color: "var(--warning)" }} />
-            Leaderboard
-          </h1>
-          <p className="mt-1" style={{ color: "var(--text-secondary)" }}>Top learners ranked by XP</p>
-        </motion.div>
+    <AppLayout>
+      <div className="scroll-y" style={{ height: "100%" }}>
+        <div style={{ maxWidth: 880, margin: "0 auto", padding: "32px 32px 40px" }}>
 
-        {/* Top 3 Podium */}
-        {leaderboard && leaderboard.length >= 3 && (
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-            className="grid grid-cols-3 gap-4 mb-8">
-            {[leaderboard[1], leaderboard[0], leaderboard[2]].map((entry, i) => {
-              const isCenter = i === 1;
-              return (
-                <div key={entry.rank} className={`glass-card p-4 text-center ${isCenter ? "ring-2" : ""}`}
-                  style={isCenter ? { borderColor: "var(--warning)", boxShadow: "0 0 20px rgba(245,158,11,0.15)" } : {}}>
-                  <div className={`mx-auto mb-2 w-12 h-12 rounded-full flex items-center justify-center text-xl font-bold ${isCenter ? "bg-yellow-500/20" : "bg-white/5"}`}>
-                    {getRankIcon(entry.rank)}
-                  </div>
-                  <div className="font-semibold text-sm truncate">{entry.name}</div>
-                  <div className="text-xl font-bold mt-1" style={{ color: "var(--accent-primary)" }}>{entry.total_xp} XP</div>
-                  <div className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>{entry.accuracy}% accuracy</div>
-                  <span className="inline-block mt-2 px-2 py-0.5 rounded-full text-xs font-medium"
-                    style={{ color: getLevelColor(entry.knowledge_level), background: `${getLevelColor(entry.knowledge_level)}20`, border: `1px solid ${getLevelColor(entry.knowledge_level)}40` }}>
-                    {entry.knowledge_level}
-                  </span>
-                </div>
-              );
-            })}
-          </motion.div>
-        )}
+          {/* Header */}
+          <div style={{ marginBottom: 24 }}>
+            <h1 className="page-h1">Leaderboard</h1>
+            <p className="page-sub">Top learners by total XP · Season ranking</p>
+          </div>
 
-        {/* Full List */}
-        <div className="glass-card-static overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr style={{ color: "var(--text-muted)", borderBottom: "1px solid var(--border-glass)" }}>
-                <th className="text-left p-4 font-medium">Rank</th>
-                <th className="text-left p-4 font-medium">Name</th>
-                <th className="text-left p-4 font-medium">XP</th>
-                <th className="text-left p-4 font-medium hidden sm:table-cell">Accuracy</th>
-                <th className="text-left p-4 font-medium hidden sm:table-cell">Sessions</th>
-                <th className="text-left p-4 font-medium">Level</th>
-              </tr>
-            </thead>
-            <tbody>
-              {leaderboard?.map((entry) => {
-                const isMe = user?.name === entry.name;
+          {/* Podium */}
+          {podium.length === 3 && (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1.1fr 1fr",
+                gap: 12,
+                alignItems: "flex-end",
+                marginBottom: 16,
+              }}
+            >
+              {podium.map((entry, i) => {
+                const rankIndex = i === 1 ? 0 : i === 0 ? 1 : 2;
+                const badgeColor = podiumColors[rankIndex];
+                const avatarSize = podiumSizes[rankIndex];
+                const rankNum = entry.rank;
                 return (
-                  <motion.tr key={entry.rank} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                    className={isMe ? "ring-1 ring-inset" : ""}
-                    style={{
-                      borderBottom: "1px solid var(--border-glass)",
-                      background: isMe ? "rgba(108,99,255,0.08)" : "transparent",
-                      ...(isMe ? { borderColor: "var(--accent-primary)" } : {}),
-                    }}>
-                    <td className="p-4">
-                      <div className="w-8 h-8 flex items-center justify-center">{getRankIcon(entry.rank)}</div>
-                    </td>
-                    <td className="p-4 font-medium">{entry.name} {isMe && <span className="text-xs ml-1" style={{ color: "var(--accent-primary)" }}>(you)</span>}</td>
-                    <td className="p-4 font-bold" style={{ color: "var(--accent-primary)" }}>{entry.total_xp}</td>
-                    <td className="p-4 hidden sm:table-cell">{entry.accuracy}%</td>
-                    <td className="p-4 hidden sm:table-cell">{entry.sessions_completed}</td>
-                    <td className="p-4">
-                      <span className="px-2 py-0.5 rounded-full text-xs font-medium"
-                        style={{ color: getLevelColor(entry.knowledge_level), background: `${getLevelColor(entry.knowledge_level)}20` }}>
-                        {entry.knowledge_level}
-                      </span>
-                    </td>
-                  </motion.tr>
+                  <div
+                    key={entry.rank}
+                    className="glass"
+                    style={{ padding: 20, textAlign: "center", position: "relative" }}
+                  >
+                    {/* Rank badge */}
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: -12,
+                        left: "50%",
+                        transform: "translateX(-50%)",
+                        width: 24,
+                        height: 24,
+                        borderRadius: 999,
+                        background: badgeColor,
+                        color: "#fff",
+                        display: "grid",
+                        placeItems: "center",
+                        fontSize: 11,
+                        fontWeight: 700,
+                        zIndex: 1,
+                      }}
+                    >
+                      {rankNum}
+                    </div>
+
+                    {/* Avatar */}
+                    <div
+                      className="avatar"
+                      style={{
+                        width: avatarSize,
+                        height: avatarSize,
+                        fontSize: avatarSize > 44 ? 16 : 13,
+                        background: `linear-gradient(135deg, ${badgeColor}cc, ${badgeColor}66)`,
+                        margin: "12px auto 8px",
+                      }}
+                    >
+                      {initials(entry.name)}
+                    </div>
+
+                    <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>{entry.name}</div>
+                    <div style={{ fontSize: 11, color: "var(--text-3)", marginBottom: 8 }}>
+                      {entry.accuracy}% accuracy · {entry.sessions} sessions
+                    </div>
+                    <div style={{ fontSize: 17, fontWeight: 700, color: badgeColor }}>{entry.xp} XP</div>
+                  </div>
                 );
               })}
-            </tbody>
-          </table>
-          {(!leaderboard || leaderboard.length === 0) && (
-            <div className="p-8 text-center" style={{ color: "var(--text-muted)" }}>No players yet. Be the first!</div>
+            </div>
           )}
+
+          {/* Table */}
+          <div className="glass" style={{ overflow: "hidden", marginBottom: 12 }}>
+            {isLoading ? (
+              <div style={{ padding: 32, textAlign: "center" }}>
+                <div className="spinner" style={{ borderColor: "var(--accent)", borderRightColor: "transparent" }} />
+              </div>
+            ) : entries.length === 0 ? (
+              <div style={{ padding: 32, textAlign: "center", color: "var(--text-3)", fontSize: 13 }}>
+                No players yet. Be the first!
+              </div>
+            ) : (
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Learner</th>
+                    <th>XP</th>
+                    <th>Sessions</th>
+                    <th>Accuracy</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginated.map((entry: any) => {
+                    const isMe = entry.name === user?.name;
+                    return (
+                      <tr key={entry.rank} className={isMe ? "me" : ""}>
+                        <td style={{ color: "var(--text-3)", width: 40 }}>{entry.rank}</td>
+                        <td>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                            <div
+                              className="avatar"
+                              style={{
+                                background: "linear-gradient(135deg, var(--accent), #6aa6ff)",
+                                fontSize: 11,
+                              }}
+                            >
+                              {initials(entry.name)}
+                            </div>
+                            <span style={{ fontWeight: 500 }}>
+                              {entry.name}
+                              {isMe && (
+                                <span style={{ color: "var(--accent)", fontSize: 11, marginLeft: 6 }}>(you)</span>
+                              )}
+                            </span>
+                          </div>
+                        </td>
+                        <td style={{ fontWeight: 600, color: "var(--accent)" }}>{entry.xp}</td>
+                        <td style={{ color: "var(--text-2)" }}>{entry.sessions}</td>
+                        <td style={{ color: "var(--text-2)" }}>{entry.accuracy}%</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* Pagination */}
+          {entries.length > PAGE_SIZE && (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span style={{ fontSize: 12, color: "var(--text-3)" }}>
+                Showing {startIdx + 1}–{endIdx} of {entries.length} learners
+              </span>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  className="btn btn-ghost"
+                  style={{ height: 32, padding: "0 12px", fontSize: 12 }}
+                  disabled={page === 0}
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                >
+                  Prev
+                </button>
+                <button
+                  className="btn btn-ghost"
+                  style={{ height: 32, padding: "0 12px", fontSize: 12 }}
+                  disabled={page >= totalPages - 1}
+                  onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+
         </div>
-      </main>
-    </div>
+      </div>
+    </AppLayout>
   );
 }

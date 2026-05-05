@@ -2,37 +2,56 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
-import { motion } from "framer-motion";
-import { sessionApi, authApi } from "@/lib/api";
+import { authApi } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
-import Navbar from "@/components/Navbar";
+import AppLayout from "@/components/AppLayout";
 import {
-  User, Trophy, Target, Flame, BookOpen, Zap, Clock, Edit3, Save, X,
+  Zap, Flame, Target, BookOpen, Edit3, Save, X, Lock,
 } from "lucide-react";
+
+function initials(name?: string): string {
+  return (name || "U")
+    .split(" ")
+    .map((w) => w[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+}
 
 export default function ProfilePage() {
   const { isAuthenticated, isLoading: authLoading, user, profile, refreshUser } = useAuth();
   const router = useRouter();
+
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState("");
+  const [editEmail, setEditEmail] = useState("");
   const [editGoal, setEditGoal] = useState(30);
   const [saving, setSaving] = useState(false);
+
+  // Password state
+  const [currentPw, setCurrentPw] = useState("");
+  const [newPw, setNewPw] = useState("");
+  const [confirmPw, setConfirmPw] = useState("");
+
+  // Notification toggles
+  const [notifs, setNotifs] = useState({
+    daily: true,
+    streak: true,
+    weekly: false,
+    leaderboard: false,
+  });
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) router.push("/login");
   }, [authLoading, isAuthenticated, router]);
 
   useEffect(() => {
-    if (user) setEditName(user.name);
-    if (profile) setEditGoal(profile.daily_goal_minutes);
+    if (user) {
+      setEditName(user.name ?? "");
+      setEditEmail(user.email ?? "");
+    }
+    if (profile) setEditGoal(profile.daily_goal_minutes ?? 30);
   }, [user, profile]);
-
-  const { data: sessions } = useQuery({
-    queryKey: ["profile-sessions"],
-    queryFn: () => sessionApi.history(100),
-    enabled: isAuthenticated,
-  });
 
   const handleSave = async () => {
     setSaving(true);
@@ -46,124 +65,237 @@ export default function ProfilePage() {
 
   if (authLoading) return null;
 
+  const joinDate = user?.created_at
+    ? new Date(user.created_at).toLocaleDateString("en-US", { month: "short", year: "numeric" })
+    : "";
+  const level = (profile?.knowledge_level ?? "beginner");
+  const levelDisplay = level.charAt(0).toUpperCase() + level.slice(1);
+
   const stats = [
-    { icon: Trophy, label: "Level", value: (profile?.knowledge_level || "beginner").charAt(0).toUpperCase() + (profile?.knowledge_level || "beginner").slice(1), color: "#a78bfa" },
-    { icon: Flame, label: "Current Streak", value: profile?.current_streak || 0, color: "#f59e0b" },
-    { icon: Flame, label: "Longest Streak", value: profile?.longest_streak || 0, color: "#ef4444" },
-    { icon: Target, label: "Accuracy", value: `${profile?.accuracy || 0}%`, color: "#22c55e" },
-    { icon: Zap, label: "Total XP", value: profile?.total_xp || 0, color: "#6c63ff" },
-    { icon: BookOpen, label: "Sessions", value: profile?.sessions_completed || 0, color: "#3b82f6" },
-    { icon: Target, label: "Questions", value: profile?.total_questions_answered || 0, color: "#ec4899" },
-    { icon: Clock, label: "Daily Goal", value: `${profile?.daily_goal_minutes || 30} min`, color: "#14b8a6" },
+    {
+      icon: Zap,
+      color: "var(--accent)",
+      bg: "rgba(59,130,246,0.12)",
+      label: "TOTAL XP",
+      value: profile?.total_xp ?? 0,
+    },
+    {
+      icon: Flame,
+      color: "var(--amber)",
+      bg: "rgba(245,158,11,0.12)",
+      label: "STREAK",
+      value: `${profile?.current_streak ?? 0}d`,
+    },
+    {
+      icon: Target,
+      color: "var(--green)",
+      bg: "rgba(16,185,129,0.12)",
+      label: "ACCURACY",
+      value: `${(profile?.accuracy ?? 0).toFixed(0)}%`,
+    },
+    {
+      icon: BookOpen,
+      color: "var(--violet)",
+      bg: "rgba(139,92,246,0.12)",
+      label: "SESSIONS",
+      value: profile?.sessions_completed ?? 0,
+    },
+  ];
+
+  const notifRows: { key: keyof typeof notifs; label: string; desc: string }[] = [
+    { key: "daily", label: "Daily reminders", desc: "Get notified at your preferred study time" },
+    { key: "streak", label: "Streak alerts", desc: "Reminders to keep your streak alive" },
+    { key: "weekly", label: "Weekly digest", desc: "Summary of your progress every Sunday" },
+    { key: "leaderboard", label: "Leaderboard updates", desc: "When your rank changes" },
   ];
 
   return (
-    <div className="min-h-screen" style={{ background: "var(--bg-primary)" }}>
-      <Navbar />
-      <main className="max-w-4xl mx-auto px-4 pt-24 pb-12">
-        {/* Profile Header */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-          className="glass-card-static p-6 md:p-8 mb-8">
-          <div className="flex items-start justify-between mb-6">
-            <div className="flex items-center gap-4">
-              <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-2xl font-bold"
-                style={{ background: "var(--gradient-primary)" }}>
-                {(user?.name || "U").charAt(0).toUpperCase()}
+    <AppLayout>
+      <div className="scroll-y" style={{ height: "100%" }}>
+        <div style={{ maxWidth: 760, margin: "0 auto", padding: "32px 32px 40px" }}>
+
+          {/* Header */}
+          <div style={{ marginBottom: 24 }}>
+            <h1 className="page-h1">Profile</h1>
+            <p className="page-sub">Manage your account, notifications, and security.</p>
+          </div>
+
+          {/* Identity card */}
+          <div className="glass" style={{ padding: 24, marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+              {/* Avatar */}
+              <div
+                className="avatar"
+                style={{
+                  width: 64,
+                  height: 64,
+                  fontSize: 20,
+                  fontWeight: 600,
+                  background: "linear-gradient(135deg, var(--accent), #6aa6ff)",
+                  flexShrink: 0,
+                }}
+              >
+                {initials(user?.name)}
               </div>
-              <div>
+
+              {/* Name / email */}
+              <div style={{ flex: 1 }}>
                 {editing ? (
-                  <input value={editName} onChange={(e) => setEditName(e.target.value)}
-                    className="input-field !py-2 !px-3 text-lg font-bold" style={{ maxWidth: "250px" }} />
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    <input
+                      className="input"
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      placeholder="Display name"
+                    />
+                    <input
+                      className="input"
+                      value={editEmail}
+                      onChange={(e) => setEditEmail(e.target.value)}
+                      placeholder="Email"
+                      type="email"
+                    />
+                  </div>
                 ) : (
-                  <h1 className="text-2xl font-bold">{user?.name}</h1>
+                  <>
+                    <div style={{ fontSize: 18, fontWeight: 500, marginBottom: 2 }}>{user?.name}</div>
+                    <div style={{ fontSize: 13, color: "var(--text-2)", marginBottom: 2 }}>{user?.email}</div>
+                    <div style={{ fontSize: 12, color: "var(--text-3)" }}>
+                      {joinDate && `Joined ${joinDate} · `}{levelDisplay}
+                    </div>
+                  </>
                 )}
-                <p className="text-sm" style={{ color: "var(--text-secondary)" }}>{user?.email}</p>
-                <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
-                  Joined {user?.created_at ? new Date(user.created_at).toLocaleDateString() : ""}
-                </p>
               </div>
-            </div>
-            <div>
-              {editing ? (
-                <div className="flex gap-2">
-                  <button onClick={handleSave} className="btn-primary !py-2 !px-4 flex items-center gap-1 text-sm" disabled={saving}>
-                    <Save className="w-4 h-4" /> Save
+
+              {/* Edit / save buttons */}
+              <div style={{ display: "flex", gap: 8 }}>
+                {editing ? (
+                  <>
+                    <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+                      <Save style={{ width: 14, height: 14 }} />
+                      {saving ? "Saving…" : "Save"}
+                    </button>
+                    <button className="btn btn-ghost" onClick={() => setEditing(false)}>
+                      <X style={{ width: 14, height: 14 }} />
+                    </button>
+                  </>
+                ) : (
+                  <button className="btn btn-ghost" onClick={() => setEditing(true)}>
+                    <Edit3 style={{ width: 14, height: 14 }} /> Edit
                   </button>
-                  <button onClick={() => setEditing(false)} className="btn-secondary !py-2 !px-4 text-sm">
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              ) : (
-                <button onClick={() => setEditing(true)} className="btn-secondary !py-2 !px-4 flex items-center gap-1 text-sm">
-                  <Edit3 className="w-4 h-4" /> Edit
-                </button>
-              )}
+                )}
+              </div>
             </div>
           </div>
 
-          {editing && (
-            <div className="mb-4">
-              <label className="block text-sm mb-1" style={{ color: "var(--text-secondary)" }}>Daily Goal (minutes)</label>
-              <input type="number" value={editGoal} onChange={(e) => setEditGoal(Number(e.target.value))}
-                className="input-field !py-2 !px-3" style={{ maxWidth: "150px" }} min={5} max={240} />
-            </div>
-          )}
-        </motion.div>
+          {/* Stats strip */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 12 }}>
+            {stats.map((s) => (
+              <div key={s.label} className="glass" style={{ padding: 14, display: "flex", alignItems: "center", gap: 12 }}>
+                <div
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 10,
+                    background: s.bg,
+                    display: "grid",
+                    placeItems: "center",
+                    flexShrink: 0,
+                  }}
+                >
+                  <s.icon style={{ width: 16, height: 16, color: s.color }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, color: "var(--text-3)", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 2 }}>
+                    {s.label}
+                  </div>
+                  <div style={{ fontSize: 17, fontWeight: 600 }}>{s.value}</div>
+                </div>
+              </div>
+            ))}
+          </div>
 
-        {/* Stats Grid */}
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-          className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          {stats.map((s) => (
-            <div key={s.label} className="glass-card p-4 text-center">
-              <s.icon className="w-5 h-5 mx-auto mb-2" style={{ color: s.color }} />
-              <div className="text-xl font-bold">{s.value}</div>
-              <div className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>{s.label}</div>
+          {/* Notifications card */}
+          <div className="glass" style={{ padding: 20, marginBottom: 12 }}>
+            <p className="section-h" style={{ marginBottom: 12 }}>Notifications</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+              {notifRows.map((row, i) => (
+                <div
+                  key={row.key}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                    padding: "12px 0",
+                    borderBottom: i < notifRows.length - 1 ? "1px solid var(--line)" : undefined,
+                  }}
+                >
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 2 }}>{row.label}</div>
+                    <div style={{ fontSize: 12, color: "var(--text-3)" }}>{row.desc}</div>
+                  </div>
+                  <div
+                    className={`switch${notifs[row.key] ? " on" : ""}`}
+                    onClick={() => setNotifs((n) => ({ ...n, [row.key]: !n[row.key] }))}
+                  />
+                </div>
+              ))}
             </div>
-          ))}
-        </motion.div>
+          </div>
 
-        {/* Session History */}
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="glass-card-static p-6">
-          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-            <Clock className="w-5 h-5" style={{ color: "var(--info)" }} />
-            Full Session History
-          </h3>
-          {sessions && sessions.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr style={{ color: "var(--text-muted)" }}>
-                    <th className="text-left pb-3 font-medium">#</th>
-                    <th className="text-left pb-3 font-medium">Date</th>
-                    <th className="text-left pb-3 font-medium">Status</th>
-                    <th className="text-left pb-3 font-medium">Questions</th>
-                    <th className="text-left pb-3 font-medium">Accuracy</th>
-                    <th className="text-left pb-3 font-medium">Reward</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sessions.map((s, i) => (
-                    <tr key={s.session_id} style={{ borderTop: "1px solid var(--border-glass)" }}>
-                      <td className="py-3" style={{ color: "var(--text-muted)" }}>{i + 1}</td>
-                      <td className="py-3">{new Date(s.started_at).toLocaleDateString()}</td>
-                      <td className="py-3">
-                        <span className={`px-2 py-0.5 rounded-full text-xs ${s.status === "completed" ? "badge-easy" : "badge-medium"}`}>{s.status}</span>
-                      </td>
-                      <td className="py-3">{s.questions_answered}</td>
-                      <td className="py-3">{s.accuracy}%</td>
-                      <td className="py-3" style={{ color: s.total_reward >= 0 ? "var(--success)" : "var(--error)" }}>
-                        {s.total_reward >= 0 ? "+" : ""}{s.total_reward.toFixed(1)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          {/* Password card */}
+          <div className="glass" style={{ padding: 20, marginBottom: 12 }}>
+            <p className="section-h" style={{ marginBottom: 14 }}>Change password</p>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 14 }}>
+              <div className="field">
+                <label className="field-label">Current password</label>
+                <input
+                  className="input"
+                  type="password"
+                  value={currentPw}
+                  onChange={(e) => setCurrentPw(e.target.value)}
+                  placeholder="••••••••"
+                />
+              </div>
+              <div className="field">
+                <label className="field-label">New password</label>
+                <input
+                  className="input"
+                  type="password"
+                  value={newPw}
+                  onChange={(e) => setNewPw(e.target.value)}
+                  placeholder="••••••••"
+                />
+              </div>
+              <div className="field">
+                <label className="field-label">Confirm new password</label>
+                <input
+                  className="input"
+                  type="password"
+                  value={confirmPw}
+                  onChange={(e) => setConfirmPw(e.target.value)}
+                  placeholder="••••••••"
+                />
+              </div>
             </div>
-          ) : (
-            <p className="text-sm" style={{ color: "var(--text-muted)" }}>No sessions yet</p>
-          )}
-        </motion.div>
-      </main>
-    </div>
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <button className="btn btn-primary">
+                <Lock style={{ width: 14, height: 14 }} /> Update password
+              </button>
+            </div>
+          </div>
+
+          {/* Danger zone */}
+          <div className="glass" style={{ padding: 20, borderColor: "rgba(239,68,68,0.2)" }}>
+            <p className="section-h" style={{ color: "#FECACA", marginBottom: 8 }}>Danger zone</p>
+            <p style={{ color: "var(--text-2)", fontSize: 13, marginBottom: 16 }}>
+              Permanently delete your account and all associated data. This action cannot be undone.
+            </p>
+            <button className="btn btn-danger">Delete account</button>
+          </div>
+
+        </div>
+      </div>
+    </AppLayout>
   );
 }

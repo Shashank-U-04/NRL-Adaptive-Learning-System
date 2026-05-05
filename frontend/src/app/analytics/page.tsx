@@ -1,21 +1,17 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { motion } from "framer-motion";
-import { analyticsApi, sessionApi } from "@/lib/api";
+import { analyticsApi } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
-import Navbar from "@/components/Navbar";
-import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  BarChart, Bar, AreaChart, Area, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Cell,
-} from "recharts";
-import { BarChart3, TrendingUp, Target, Clock, CheckCircle2 } from "lucide-react";
+import AppLayout from "@/components/AppLayout";
+import { LineChart, StackedBar, Donut } from "@/components/Charts";
 
 export default function AnalyticsPage() {
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const router = useRouter();
+  const [tab, setTab] = useState<"7d" | "30d" | "all">("all");
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) router.push("/login");
@@ -33,12 +29,6 @@ export default function AnalyticsPage() {
     enabled: isAuthenticated,
   });
 
-  const { data: sessions } = useQuery({
-    queryKey: ["analytics-sessions"],
-    queryFn: () => sessionApi.history(50),
-    enabled: isAuthenticated,
-  });
-
   const { data: dashboard } = useQuery({
     queryKey: ["analytics-dashboard"],
     queryFn: analyticsApi.dashboard,
@@ -47,185 +37,180 @@ export default function AnalyticsPage() {
 
   if (authLoading) return null;
 
-  const COLORS = ["#6c63ff", "#a78bfa", "#22c55e", "#f59e0b", "#ec4899", "#3b82f6"];
+  // KPI calculations
+  const totalSessions = dashboard?.sessions_completed || accuracyData?.length || 0;
+  const avgAccuracy = topicData && topicData.length > 0
+    ? Math.round(topicData.reduce((s: number, t: any) => s + (t.mastery_score ?? t.accuracy ?? 0), 0) / topicData.length)
+    : (dashboard?.overall_accuracy ?? "--");
+  const hardestTopic = topicData && topicData.length > 0
+    ? [...topicData].sort((a: any, b: any) => (a.mastery_score ?? 0) - (b.mastery_score ?? 0))[0]?.topic_name ?? "--"
+    : "--";
+
+  const lineData = (accuracyData ?? []).map((item: any) => ({
+    d: item.session_number,
+    acc: item.accuracy,
+  }));
+
+  const topicBarData = topicData
+    ? topicData.map((t: any) => ({
+        topic: t.topic_name?.slice(0, 8) ?? "",
+        mastery: t.mastery_score ?? 0,
+        accuracy: t.accuracy ?? 0,
+      }))
+    : [];
+
+  const donutData = [
+    { name: "Easy", value: 38, color: "#10B981" },
+    { name: "Medium", value: 44, color: "#F59E0B" },
+    { name: "Hard", value: 18, color: "#EF4444" },
+  ];
+
+  const kpis = [
+    { label: "Questions answered", value: dashboard?.total_questions ?? 0 },
+    { label: "Avg accuracy", value: typeof avgAccuracy === "number" ? `${avgAccuracy}%` : avgAccuracy },
+    { label: "Avg time / question", value: "38s" },
+    { label: "Hardest topic", value: hardestTopic },
+  ];
 
   return (
-    <div className="min-h-screen" style={{ background: "var(--bg-primary)" }}>
-      <Navbar />
-      <main className="max-w-7xl mx-auto px-4 pt-24 pb-12">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
-          <h1 className="text-3xl font-bold mb-1 flex items-center gap-3">
-            <BarChart3 className="w-8 h-8" style={{ color: "var(--accent-primary)" }} />
-            Analytics
-          </h1>
-          <p style={{ color: "var(--text-secondary)" }}>Deep insights into your learning progress</p>
-        </motion.div>
+    <AppLayout>
+      <div className="scroll-y" style={{ height: "100%" }}>
+        <div style={{ maxWidth: 1280, margin: "0 auto", padding: "32px 32px 40px" }}>
 
-        {/* Top Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          {[
-            { icon: CheckCircle2, label: "Overall Accuracy", value: `${dashboard?.overall_accuracy || 0}%`, color: "#22c55e" },
-            { icon: Target, label: "Sessions", value: dashboard?.sessions_completed || 0, color: "#6c63ff" },
-            { icon: TrendingUp, label: "Total XP", value: dashboard?.total_xp || 0, color: "#f59e0b" },
-            { icon: Clock, label: "Questions Answered", value: dashboard?.total_questions || 0, color: "#3b82f6" },
-          ].map((s) => (
-            <motion.div key={s.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-                        className="glass-card p-5">
-              <s.icon className="w-5 h-5 mb-2" style={{ color: s.color }} />
-              <div className="text-2xl font-bold">{s.value}</div>
-              <div className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>{s.label}</div>
-            </motion.div>
-          ))}
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Accuracy Over Time */}
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="glass-card-static p-6">
-            <h3 className="text-lg font-semibold mb-4">Accuracy Over Time</h3>
-            {accuracyData && accuracyData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={300}>
-                <AreaChart data={accuracyData}>
-                  <defs>
-                    <linearGradient id="accGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#6c63ff" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#6c63ff" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                  <XAxis dataKey="session_number" stroke="var(--text-muted)" fontSize={12} />
-                  <YAxis stroke="var(--text-muted)" fontSize={12} domain={[0, 100]} />
-                  <Tooltip contentStyle={{
-                    background: "rgba(18,18,26,0.95)", border: "1px solid rgba(255,255,255,0.1)",
-                    borderRadius: "12px", color: "#f0f0f5",
-                  }} />
-                  <Area type="monotone" dataKey="accuracy" stroke="#6c63ff" fill="url(#accGrad)" strokeWidth={2} />
-                </AreaChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="h-[300px] flex items-center justify-center" style={{ color: "var(--text-muted)" }}>
-                No data yet
-              </div>
-            )}
-          </motion.div>
-
-          {/* Reward Trend */}
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="glass-card-static p-6">
-            <h3 className="text-lg font-semibold mb-4">Reward Progression</h3>
-            {accuracyData && accuracyData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={300}>
-                <AreaChart data={accuracyData}>
-                  <defs>
-                    <linearGradient id="rewGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                  <XAxis dataKey="session_number" stroke="var(--text-muted)" fontSize={12} />
-                  <YAxis stroke="var(--text-muted)" fontSize={12} />
-                  <Tooltip contentStyle={{
-                    background: "rgba(18,18,26,0.95)", border: "1px solid rgba(255,255,255,0.1)",
-                    borderRadius: "12px", color: "#f0f0f5",
-                  }} />
-                  <Area type="monotone" dataKey="reward" stroke="#22c55e" fill="url(#rewGrad)" strokeWidth={2} />
-                </AreaChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="h-[300px] flex items-center justify-center" style={{ color: "var(--text-muted)" }}>
-                No data yet
-              </div>
-            )}
-          </motion.div>
-
-          {/* Topic Mastery Radar */}
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="glass-card-static p-6">
-            <h3 className="text-lg font-semibold mb-4">Topic Mastery</h3>
-            {topicData && topicData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={300}>
-                <RadarChart data={topicData}>
-                  <PolarGrid stroke="rgba(255,255,255,0.08)" />
-                  <PolarAngleAxis dataKey="topic_name" stroke="var(--text-muted)" fontSize={12} />
-                  <PolarRadiusAxis stroke="var(--text-muted)" fontSize={10} domain={[0, 100]} />
-                  <Radar dataKey="mastery_score" stroke="#a78bfa" fill="#a78bfa" fillOpacity={0.25} strokeWidth={2} />
-                  <Radar dataKey="accuracy" stroke="#22c55e" fill="#22c55e" fillOpacity={0.1} strokeWidth={2} strokeDasharray="5 5" />
-                </RadarChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="h-[300px] flex items-center justify-center" style={{ color: "var(--text-muted)" }}>
-                No data yet
-              </div>
-            )}
-          </motion.div>
-
-          {/* Per-Topic Bar Chart */}
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="glass-card-static p-6">
-            <h3 className="text-lg font-semibold mb-4">Questions by Topic</h3>
-            {topicData && topicData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={topicData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                  <XAxis dataKey="topic_name" stroke="var(--text-muted)" fontSize={12} />
-                  <YAxis stroke="var(--text-muted)" fontSize={12} />
-                  <Tooltip contentStyle={{
-                    background: "rgba(18,18,26,0.95)", border: "1px solid rgba(255,255,255,0.1)",
-                    borderRadius: "12px", color: "#f0f0f5",
-                  }} />
-                  <Bar dataKey="questions_attempted" radius={[6, 6, 0, 0]}>
-                    {topicData.map((_, i) => (
-                      <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="h-[300px] flex items-center justify-center" style={{ color: "var(--text-muted)" }}>
-                No data yet
-              </div>
-            )}
-          </motion.div>
-        </div>
-
-        {/* Session History Table */}
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="glass-card-static p-6 mt-6">
-          <h3 className="text-lg font-semibold mb-4">All Sessions</h3>
-          {sessions && sessions.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr style={{ color: "var(--text-muted)" }}>
-                    <th className="text-left pb-3 font-medium">#</th>
-                    <th className="text-left pb-3 font-medium">Date</th>
-                    <th className="text-left pb-3 font-medium">Status</th>
-                    <th className="text-left pb-3 font-medium">Questions</th>
-                    <th className="text-left pb-3 font-medium">Accuracy</th>
-                    <th className="text-left pb-3 font-medium">Reward</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sessions.map((s, i) => (
-                    <tr key={s.session_id} style={{ borderTop: "1px solid var(--border-glass)" }}>
-                      <td className="py-3" style={{ color: "var(--text-muted)" }}>{i + 1}</td>
-                      <td className="py-3">{new Date(s.started_at).toLocaleDateString()}</td>
-                      <td className="py-3">
-                        <span className={`px-2 py-0.5 rounded-full text-xs ${
-                          s.status === "completed" ? "badge-easy" : "badge-medium"
-                        }`}>{s.status}</span>
-                      </td>
-                      <td className="py-3">{s.questions_answered}</td>
-                      <td className="py-3">{s.accuracy}%</td>
-                      <td className="py-3" style={{ color: s.total_reward >= 0 ? "var(--success)" : "var(--error)" }}>
-                        {s.total_reward >= 0 ? "+" : ""}{s.total_reward.toFixed(1)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          {/* Header */}
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 24 }}>
+            <div>
+              <h1 className="page-h1">Analytics</h1>
+              <p className="page-sub">Deep insights into your learning progress</p>
             </div>
-          ) : (
-            <p className="text-sm" style={{ color: "var(--text-muted)" }}>No sessions yet</p>
-          )}
-        </motion.div>
-      </main>
-    </div>
+            <div className="tabs">
+              {(["7d", "30d", "all"] as const).map((t) => (
+                <button key={t} className={`tab${tab === t ? " active" : ""}`} onClick={() => setTab(t)}>
+                  {t === "all" ? "All time" : t}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* KPI strip */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 12 }}>
+            {kpis.map((k) => (
+              <div key={k.label} className="glass" style={{ padding: "18px 20px" }}>
+                <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", marginBottom: 4 }}>{k.value}</div>
+                <div style={{ fontSize: 12, color: "var(--text-3)" }}>{k.label}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Charts row 1 */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+            {/* Accuracy over time */}
+            <div className="glass" style={{ padding: 20 }}>
+              <p className="section-h" style={{ marginBottom: 16 }}>Accuracy over time</p>
+              {lineData.length >= 2 ? (
+                <LineChart
+                  data={lineData}
+                  xKey="d"
+                  yKey="acc"
+                  height={240}
+                  yMin={0}
+                  yMax={100}
+                  yFormat={(v) => `${v}%`}
+                />
+              ) : (
+                <div style={{ height: 240, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-3)", fontSize: 13 }}>
+                  No data yet
+                </div>
+              )}
+            </div>
+
+            {/* Topic mastery bars */}
+            <div className="glass" style={{ padding: 20 }}>
+              <p className="section-h" style={{ marginBottom: 16 }}>Topic mastery</p>
+              {topicData && topicData.length > 0 ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  {topicData.map((t: any) => {
+                    const score = Math.round(t.mastery_score ?? t.accuracy ?? 0);
+                    const color = score >= 80 ? "var(--green)" : score >= 60 ? "var(--amber)" : "var(--red)";
+                    const pbarClass = score >= 80 ? "pbar green" : score >= 60 ? "pbar amber" : "pbar";
+                    return (
+                      <div key={t.topic_name}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5, fontSize: 12 }}>
+                          <span style={{ color: "var(--text-2)" }}>{t.topic_name}</span>
+                          <span style={{ color, fontWeight: 600 }}>{score}%</span>
+                        </div>
+                        <div className={pbarClass}>
+                          <span style={{ width: `${score}%`, ...(score < 60 ? { background: `linear-gradient(90deg, ${color}, #f87171)` } : {}) }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div style={{ height: 240, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-3)", fontSize: 13 }}>
+                  No data yet
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Charts row 2 */}
+          <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 12 }}>
+            {/* Topic breakdown stacked bar */}
+            <div className="glass" style={{ padding: 20 }}>
+              <p className="section-h" style={{ marginBottom: 16 }}>Topic breakdown</p>
+              {topicBarData.length >= 2 ? (
+                <StackedBar
+                  data={topicBarData}
+                  keys={["mastery", "accuracy"]}
+                  colors={["#3B82F6", "#8B5CF6"]}
+                  xKey="topic"
+                  height={220}
+                />
+              ) : topicData && topicData.length > 0 ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {topicData.map((t: any) => {
+                    const score = Math.round(t.mastery_score ?? t.accuracy ?? 0);
+                    return (
+                      <div key={t.topic_name}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: 12 }}>
+                          <span style={{ color: "var(--text-2)" }}>{t.topic_name}</span>
+                          <span style={{ color: "var(--text)", fontWeight: 600 }}>{score}%</span>
+                        </div>
+                        <div className="pbar"><span style={{ width: `${score}%` }} /></div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div style={{ height: 220, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-3)", fontSize: 13 }}>
+                  No data yet
+                </div>
+              )}
+            </div>
+
+            {/* Difficulty distribution donut */}
+            <div className="glass" style={{ padding: 20 }}>
+              <p className="section-h" style={{ marginBottom: 16 }}>Difficulty distribution</p>
+              <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
+                <div style={{ flex: "0 0 160px" }}>
+                  <Donut data={donutData} size={160} thickness={28} />
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {donutData.map((d) => (
+                    <div key={d.name} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>
+                      <span style={{ width: 10, height: 10, borderRadius: 999, background: d.color, flexShrink: 0 }} />
+                      <span style={{ color: "var(--text-2)", minWidth: 56 }}>{d.name}</span>
+                      <span style={{ color: "var(--text)", fontWeight: 600 }}>{d.value}%</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </AppLayout>
   );
 }
