@@ -1,0 +1,63 @@
+{
+  "title": "NRL Overview",
+  "uid": "nrl-overview",
+  "schemaVersion": 36,
+  "version": 1,
+  "refresh": "30s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "AI Calls by Provider & Status",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "sum by (provider, status) (rate(ai_calls_total[5m]))",
+          "legendFormat": "{{provider}} / {{status}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Cache Hit Rate",
+      "type": "stat",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "sum(rate(ai_calls_total{status=\"hit\"}[1h])) / sum(rate(ai_calls_total[1h])) * 100",
+          "legendFormat": "Hit %"
+        }
+      ],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "textMode": "auto", "colorMode": "background" },
+      "fieldConfig": { "defaults": { "unit": "percent", "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 60 }, { "color": "green", "value": 80 }] } } }
+    },
+    {
+      "id": 3,
+      "title": "HTTP Request Rate",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "sum by (method, handler) (rate(http_requests_total[5m]))",
+          "legendFormat": "{{method}} {{handler}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Application Logs",
+      "type": "logs",
+      "gridPos": { "x": 0, "y": 16, "w": 24, "h": 10 },
+      "targets": [
+        {
+          "datasource": "Loki",
+          "expr": "{container=\"nrl-adaptive-learning-system-backend-1\"}",
+          "legendFormat": ""
+        }
+      ]
+    }
+  ]
+}
