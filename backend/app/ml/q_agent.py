@@ -8,7 +8,7 @@ to maximize student learning and engagement in the student learning environment.
 import random
 import pickle
 from typing import Dict, Tuple, Optional
-from backend.app.ml.config import (
+from app.ml.config import (
     ACTIONS, GAMMA, ALPHA, EPSILON_START, EPSILON_DECAY, EPSILON_MIN,
     MAX_STEPS, NUM_EPISODES
 )

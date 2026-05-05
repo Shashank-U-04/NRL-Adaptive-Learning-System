@@ -16,9 +16,9 @@ import random
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.metrics import ai_calls_total
-from backend.app.models.models import Question, Topic
-from backend.app.services.ai_provider import AIProviderError, get_ai_provider
+from app.core.metrics import ai_calls_total
+from app.models.models import Question, Topic
+from app.services.ai_provider import AIProviderError, get_ai_provider
 
 logger = logging.getLogger("nrl.ai_question")
 

@@ -9,15 +9,15 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.database import get_db
-from backend.app.core.dependencies import get_current_user
-from backend.app.models.models import User, Session
-from backend.app.schemas.schemas import (
+from app.core.database import get_db
+from app.core.dependencies import get_current_user
+from app.models.models import User, Session
+from app.schemas.schemas import (
     StartSessionRequest, StartSessionResponse,
     AnswerRequest, AnswerResponse,
     EndSessionRequest, SessionSummary, SessionHistoryItem,
 )
-from backend.app.services.session_service import SessionService
+from app.services.session_service import SessionService
 
 router = APIRouter(prefix="/sessions", tags=["Learning Sessions"])
 

@@ -22,12 +22,12 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.database import get_db
-from backend.app.core.dependencies import get_current_user
-from backend.app.models.models import (
+from app.core.database import get_db
+from app.core.dependencies import get_current_user
+from app.models.models import (
     LearningModule, LearningEvent, ModuleProgress, Topic, User,
 )
-from backend.app.services.ai_generation_service import generate_learning_module
+from app.services.ai_generation_service import generate_learning_module
 
 logger = logging.getLogger("nrl.learning")
 router = APIRouter(prefix="/learning", tags=["Learning Mode"])

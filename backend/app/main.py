@@ -1,26 +1,26 @@
 """
 NRL Adaptive Learning System — FastAPI Application Entry Point
 
-Start: uvicorn backend.app.main:app --reload
+Start: uvicorn app.main:app --reload
 """
 
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.app.core.config import (
+from app.core.config import (
     APP_NAME,
     APP_VERSION,
     CORS_ORIGINS,
     ENVIRONMENT,
 )
-from backend.app.core.cost_tracker import cost_tracker
-from backend.app.core.database import engine, init_db
-from backend.app.core.logging_config import setup_logging
-from backend.app.core.metrics import setup_metrics
-from backend.app.core.rate_limit import setup_rate_limiting
+from app.core.cost_tracker import cost_tracker
+from app.core.database import engine, init_db
+from app.core.logging_config import setup_logging
+from app.core.metrics import setup_metrics
+from app.core.rate_limit import setup_rate_limiting
 
 setup_logging()
 logger = logging.getLogger("nrl")
@@ -34,14 +34,14 @@ async def lifespan(app: FastAPI):
     logger.info("Database tables verified.")
 
     # Pre-warm RL engine
-    from backend.app.services.rl_service import get_rl_service
+    from app.services.rl_service import get_rl_service
 
     get_rl_service()
     logger.info("RL service initialised.")
 
     # Pre-warm AI provider (best-effort, non-fatal)
     try:
-        from backend.app.services.ai_provider import get_ai_provider
+        from app.services.ai_provider import get_ai_provider
 
         provider = await get_ai_provider()
         health = await provider.health()
@@ -53,7 +53,7 @@ async def lifespan(app: FastAPI):
 
     logger.info("Shutting down — closing DB engine and AI client.")
     try:
-        from backend.app.services.ai_provider import get_ai_provider
+        from app.services.ai_provider import get_ai_provider
 
         await (await get_ai_provider()).close()
     except Exception:  # noqa: BLE001
@@ -73,18 +73,31 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
 )
 
 setup_rate_limiting(app)
 setup_metrics(app)
 
 
+@app.middleware("http")
+async def security_headers(request: Request, call_next) -> Response:
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    if ENVIRONMENT == "production":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
+
 # ── Routers ──────────────────────────────────────────────
 API_PREFIX = "/api/v1"
 
-from backend.app.api.routes import (  # noqa: E402
+from app.api.routes import (  # noqa: E402
     analytics,
     auth,
     leaderboard,
@@ -119,7 +132,7 @@ async def root():
 @app.get("/system/ai", tags=["System"])
 async def ai_health():
     """Show which AI providers are available and which is preferred."""
-    from backend.app.services.ai_provider import get_ai_provider
+    from app.services.ai_provider import get_ai_provider
 
     provider = await get_ai_provider()
     return await provider.health()

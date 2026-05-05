@@ -18,7 +18,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
 
-from backend.app.core.config import (
+from app.core.config import (
     RATE_LIMIT_AUTH,
     RATE_LIMIT_DEFAULT,
     RATE_LIMIT_ENABLED,

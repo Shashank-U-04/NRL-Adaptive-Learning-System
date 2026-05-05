@@ -27,7 +27,7 @@ from prometheus_client import (
     generate_latest,
 )
 
-from backend.app.core.config import METRICS_ENABLED
+from app.core.config import METRICS_ENABLED
 
 logger = logging.getLogger("nrl.metrics")
 

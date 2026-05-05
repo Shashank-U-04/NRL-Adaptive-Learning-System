@@ -21,7 +21,7 @@ from typing import Any
 
 import httpx
 
-from backend.app.core.config import (
+from app.core.config import (
     AI_PROVIDER,
     OLLAMA_BASE_URL,
     OLLAMA_MODEL,
@@ -32,7 +32,7 @@ from backend.app.core.config import (
     TOGETHER_API_KEY,
     TOGETHER_MODEL,
 )
-from backend.app.core.cost_tracker import cost_tracker
+from app.core.cost_tracker import cost_tracker
 
 logger = logging.getLogger("nrl.ai_provider")
 

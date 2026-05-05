@@ -2,7 +2,7 @@
 
 import pytest
 
-from backend.app.services.rl_service import RLService, ACTIONS
+from app.services.rl_service import RLService, ACTIONS
 
 
 def test_initial_state_shape():

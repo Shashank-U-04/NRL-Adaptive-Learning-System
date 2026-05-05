@@ -9,8 +9,8 @@ import asyncio
 
 from sqlalchemy import select, func
 
-from backend.app.core.database import init_db, AsyncSessionLocal
-from backend.app.models.models import Question, Topic
+from app.core.database import init_db, AsyncSessionLocal
+from app.models.models import Question, Topic
 
 
 # (id, title, description, order_index)

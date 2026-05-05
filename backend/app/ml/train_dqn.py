@@ -23,9 +23,9 @@ import torch
 import torch.nn.functional as F
 from torch import optim
 
-from backend.app.core.config import RL_MODEL_PATH
-from backend.app.ml.dqn_model import DQN, ReplayBuffer, encode_state
-from backend.app.ml.student_env_v2 import AdaptiveStudentEnv
+from app.core.config import RL_MODEL_PATH
+from app.ml.dqn_model import DQN, ReplayBuffer, encode_state
+from app.ml.student_env_v2 import AdaptiveStudentEnv
 
 logger = logging.getLogger("nrl.train_dqn")
 

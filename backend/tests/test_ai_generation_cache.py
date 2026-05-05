@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from backend.app.services import ai_generation_service as svc
+from app.services import ai_generation_service as svc
 
 
 class _FakeModule:
@@ -41,7 +41,7 @@ def test_is_fresh_handles_naive_datetime(monkeypatch):
 @pytest.mark.asyncio
 async def test_generate_returns_cached_when_fresh(monkeypatch, db_session):
     """When a fresh module exists in DB, generate should return it without calling AI."""
-    from backend.app.models.models import LearningModule, Topic
+    from app.models.models import LearningModule, Topic
 
     monkeypatch.setattr(svc, "CACHE_EXPIRY_DAYS", 0)
 

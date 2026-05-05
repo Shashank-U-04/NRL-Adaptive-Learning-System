@@ -12,11 +12,11 @@ Rich state vector (7 features) + explicit reward function per architecture plan.
 import logging
 from pathlib import Path
 
-from backend.app.core.config import RL_MODEL_PATH
+from app.core.config import RL_MODEL_PATH
 
 try:
     import torch
-    from backend.app.ml.dqn_model import DQN, encode_state
+    from app.ml.dqn_model import DQN, encode_state
     TORCH_AVAILABLE = True
 except (ImportError, OSError):
     TORCH_AVAILABLE = False

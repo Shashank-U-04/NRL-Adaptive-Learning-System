@@ -19,13 +19,13 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.models.models import (
+from app.models.models import (
     User, Session, SessionEvent, Question, QuestionAttempt,
     Topic, LearnerMetric, Profile,
 )
-from backend.app.services.rl_service import get_rl_service, RLService, ACTIONS
-from backend.app.core.config import ROOT_DIR, SESSION_TTL_SECONDS
-from backend.app.schemas.schemas import (
+from app.services.rl_service import get_rl_service, RLService, ACTIONS
+from app.core.config import ROOT_DIR, SESSION_TTL_SECONDS
+from app.schemas.schemas import (
     QuestionPayload, StartSessionResponse,
     AnswerResponse, SessionSummary, SessionHistoryItem,
 )
@@ -384,7 +384,7 @@ class SessionService:
 
         # 5. Trigger AI generation as a final fallback
         try:
-            from backend.app.services.ai_question_service import get_or_create_ai_question
+            from app.services.ai_question_service import get_or_create_ai_question
 
             db_q = await get_or_create_ai_question(self.db, topic, difficulty)
             return QuestionPayload(

@@ -15,7 +15,7 @@ import logging
 import sys
 from datetime import datetime, timezone
 
-from backend.app.core.config import LOG_JSON, LOG_LEVEL
+from app.core.config import LOG_JSON, LOG_LEVEL
 
 
 class JsonFormatter(logging.Formatter):

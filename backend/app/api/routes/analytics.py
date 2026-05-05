@@ -8,10 +8,10 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.database import get_db
-from backend.app.core.dependencies import get_current_user
-from backend.app.models.models import User, Session, LearnerMetric, Topic
-from backend.app.schemas.schemas import DashboardResponse, AccuracyPoint, TopicMastery
+from app.core.database import get_db
+from app.core.dependencies import get_current_user
+from app.models.models import User, Session, LearnerMetric, Topic
+from app.schemas.schemas import DashboardResponse, AccuracyPoint, TopicMastery
 
 router = APIRouter(prefix="/analytics", tags=["Analytics"])
 

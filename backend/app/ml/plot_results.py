@@ -8,7 +8,7 @@ including total reward per episode with moving averages to demonstrate convergen
 import pickle
 import numpy as np
 import matplotlib.pyplot as plt
-from backend.app.ml.config import MOVING_AVERAGE_WINDOW, NUM_EPISODES
+from app.ml.config import MOVING_AVERAGE_WINDOW, NUM_EPISODES
 from typing import List, Dict, Tuple
 
 

@@ -7,12 +7,12 @@ POST /auth/register, /auth/login, /auth/refresh, GET /auth/me, PUT /auth/profile
 from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.config import RATE_LIMIT_AUTH
-from backend.app.core.database import get_db
-from backend.app.core.dependencies import get_current_user
-from backend.app.core.rate_limit import limiter
-from backend.app.models.models import User
-from backend.app.schemas.schemas import (
+from app.core.config import RATE_LIMIT_AUTH
+from app.core.database import get_db
+from app.core.dependencies import get_current_user
+from app.core.rate_limit import limiter
+from app.models.models import User
+from app.schemas.schemas import (
     LoginRequest,
     MeResponse,
     ProfileResponse,
@@ -22,7 +22,7 @@ from backend.app.schemas.schemas import (
     UpdateProfileRequest,
     UserResponse,
 )
-from backend.app.services.auth_service import AuthService
+from app.services.auth_service import AuthService
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 

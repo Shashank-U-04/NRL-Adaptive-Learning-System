@@ -27,10 +27,10 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.config import CACHE_EXPIRY_DAYS
-from backend.app.core.metrics import ai_calls_total
-from backend.app.models.models import LearningModule, Topic
-from backend.app.services.ai_provider import AIProviderError, get_ai_provider
+from app.core.config import CACHE_EXPIRY_DAYS
+from app.core.metrics import ai_calls_total
+from app.models.models import LearningModule, Topic
+from app.services.ai_provider import AIProviderError, get_ai_provider
 
 logger = logging.getLogger("nrl.ai_generation")
 

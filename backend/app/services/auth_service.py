@@ -9,10 +9,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException, status
 
-from backend.app.models.models import User, Profile
-from backend.app.core.security import hash_password, verify_password, create_access_token, create_refresh_token, decode_token
-from backend.app.core.config import ACCESS_TOKEN_EXPIRE_MINUTES
-from backend.app.schemas.schemas import RegisterRequest, LoginRequest, TokenResponse
+from app.models.models import User, Profile
+from app.core.security import hash_password, verify_password, create_access_token, create_refresh_token, decode_token
+from app.core.config import ACCESS_TOKEN_EXPIRE_MINUTES
+from app.schemas.schemas import RegisterRequest, LoginRequest, TokenResponse
 
 logger = logging.getLogger(__name__)
 

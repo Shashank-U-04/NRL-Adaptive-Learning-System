@@ -8,7 +8,7 @@ reward mechanisms, and constraints that an RL agent must learn to navigate.
 import numpy as np
 import random
 from typing import Tuple, Dict, Any
-from backend.app.ml.config import (
+from app.ml.config import (
     KNOWLEDGE_LEVELS, TOPICS, QUESTION_DIFFICULTIES, ENGAGEMENT_LEVELS, ACTIONS,
     ACTION_INDICES, REWARDS, RESPONSE_PROBABILITIES, ENGAGEMENT_PROBABILITIES,
     MAX_CONSECUTIVE_CORRECT, MAX_CONSECUTIVE_WRONG

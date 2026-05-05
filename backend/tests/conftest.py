@@ -37,7 +37,7 @@ import pytest  # noqa: E402
 import pytest_asyncio  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
 
-from backend.app.core.database import AsyncSessionLocal, engine, init_db  # noqa: E402
+from app.core.database import AsyncSessionLocal, engine, init_db  # noqa: E402
 
 
 @pytest.fixture(scope="session")
@@ -57,7 +57,7 @@ async def _db_setup():
 @pytest_asyncio.fixture
 async def client(_db_setup):
     """HTTP client wired to the FastAPI app via ASGI transport."""
-    from backend.app.main import app
+    from app.main import app
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://testserver") as c:

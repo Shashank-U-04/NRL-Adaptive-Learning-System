@@ -12,7 +12,7 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import declarative_base
 
-from backend.app.core.config import DATABASE_URL
+from app.core.config import DATABASE_URL
 
 logger = logging.getLogger("nrl.database")
 
@@ -57,7 +57,7 @@ async def get_db() -> AsyncSession:  # type: ignore[return]
 
 async def init_db() -> None:
     """Create all tables if they don't already exist."""
-    from backend.app.models.models import Base as ModelsBase  # noqa: F401  (registers metadata)
+    from app.models.models import Base as ModelsBase  # noqa: F401  (registers metadata)
 
     async with engine.begin() as conn:
         await conn.run_sync(ModelsBase.metadata.create_all)

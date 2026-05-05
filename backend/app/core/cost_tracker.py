@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from backend.app.core.config import AI_MONTHLY_BUDGET_USD, ROOT_DIR
+from app.core.config import AI_MONTHLY_BUDGET_USD, ROOT_DIR
 
 logger = logging.getLogger("nrl.cost")
 

@@ -13,11 +13,11 @@ import pytest
 
 torch = pytest.importorskip("torch")  # noqa: F841 (skip whole module if torch missing)
 
-from backend.app.core.config import RL_MODEL_PATH
-from backend.app.ml.dqn_model import DQN, encode_state
-from backend.app.ml.student_env_v2 import ACTIONS, AdaptiveStudentEnv
-from backend.app.services.rl_service import ACTIONS as RL_ACTIONS
-from backend.app.services.rl_service import RLService
+from app.core.config import RL_MODEL_PATH
+from app.ml.dqn_model import DQN, encode_state
+from app.ml.student_env_v2 import ACTIONS, AdaptiveStudentEnv
+from app.services.rl_service import ACTIONS as RL_ACTIONS
+from app.services.rl_service import RLService
 
 
 def _has_trained_weights() -> bool:

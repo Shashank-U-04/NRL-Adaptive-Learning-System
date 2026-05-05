@@ -8,9 +8,9 @@ from fastapi import Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.security import oauth2_scheme, decode_token
-from backend.app.core.database import get_db
-from backend.app.models.models import User
+from app.core.security import oauth2_scheme, decode_token
+from app.core.database import get_db
+from app.models.models import User
 
 
 async def get_current_user(

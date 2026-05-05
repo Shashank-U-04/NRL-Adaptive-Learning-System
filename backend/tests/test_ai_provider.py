@@ -4,8 +4,8 @@ import socket
 
 import pytest
 
-from backend.app.core.config import OLLAMA_BASE_URL
-from backend.app.services.ai_provider import AIProvider, AIProviderError
+from app.core.config import OLLAMA_BASE_URL
+from app.services.ai_provider import AIProvider, AIProviderError
 
 
 def _ollama_reachable() -> bool:
@@ -56,7 +56,7 @@ async def test_generate_json_all_fail_raises(monkeypatch):
     We monkeypatch OLLAMA_BASE_URL on the imported module so the test does not
     race against a developer's live Ollama daemon coming up mid-suite.
     """
-    from backend.app.services import ai_provider as ap
+    from app.services import ai_provider as ap
 
     monkeypatch.setattr(ap, "OLLAMA_BASE_URL", "http://127.0.0.1:1")
     monkeypatch.setattr(ap, "OPENAI_API_KEY", "")

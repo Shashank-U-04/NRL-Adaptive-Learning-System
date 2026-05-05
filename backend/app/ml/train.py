@@ -7,9 +7,9 @@ in the student learning environment over 1000 episodes.
 
 import numpy as np
 from typing import Dict
-from backend.app.ml.student_env import StudentLearningEnv
-from backend.app.ml.q_agent import QLearningAgent
-from backend.app.ml.config import (
+from app.ml.student_env import StudentLearningEnv
+from app.ml.q_agent import QLearningAgent
+from app.ml.config import (
     NUM_EPISODES, MAX_STEPS, EVAL_INTERVAL, GAMMA, ALPHA,
     EPSILON_START, EPSILON_DECAY, EPSILON_MIN
 )

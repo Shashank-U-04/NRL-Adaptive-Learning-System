@@ -2,7 +2,7 @@
 
 import pytest
 
-from backend.app.core.cost_tracker import CostTracker
+from app.core.cost_tracker import CostTracker
 
 
 @pytest.mark.asyncio

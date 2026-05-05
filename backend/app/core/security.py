@@ -12,7 +12,7 @@ from passlib.context import CryptContext
 from fastapi import HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 
-from backend.app.core.config import (
+from app.core.config import (
     SECRET_KEY, ALGORITHM,
     ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS,
 )

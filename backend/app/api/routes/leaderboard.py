@@ -8,9 +8,9 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.database import get_db
-from backend.app.models.models import User, Profile
-from backend.app.schemas.schemas import LeaderboardEntry
+from app.core.database import get_db
+from app.models.models import User, Profile
+from app.schemas.schemas import LeaderboardEntry
 
 router = APIRouter(prefix="/leaderboard", tags=["Leaderboard"])
 
