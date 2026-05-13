@@ -12,10 +12,13 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sys
 from datetime import datetime, timezone
 
-from app.core.config import LOG_JSON, LOG_LEVEL
+from app.core.config import LOG_LEVEL
+
+LOG_JSON: bool = os.getenv("LOG_JSON", "false").lower() == "true"
 
 
 class JsonFormatter(logging.Formatter):

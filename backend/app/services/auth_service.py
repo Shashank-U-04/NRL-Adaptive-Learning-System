@@ -1,71 +1,63 @@
 """
 NRL Adaptive Learning System — Auth Service
 
-Register, login, refresh tokens, fetch user.
+Provides sync_user: an idempotent upsert that ensures a users row and its
+associated profiles row exist for a given Supabase identity. Called by the
+auth dependency on every authenticated request so the application DB stays
+in sync with Supabase without any separate registration step.
 """
 
 import logging
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi import HTTPException, status
 
 from app.models.models import User, Profile
-from app.core.security import hash_password, verify_password, create_access_token, create_refresh_token, decode_token
-from app.core.config import ACCESS_TOKEN_EXPIRE_MINUTES
-from app.schemas.schemas import RegisterRequest, LoginRequest, TokenResponse
 
 logger = logging.getLogger(__name__)
 
 
-class AuthService:
-    def __init__(self, db: AsyncSession):
-        self.db = db
+async def sync_user(
+    supabase_sub: str,
+    email: str,
+    name: str,
+    db: AsyncSession,
+) -> User:
+    """Idempotent upsert — called from dependencies.py on first login.
 
-    async def register(self, data: RegisterRequest) -> User:
-        result = await self.db.execute(select(User).where(User.email == data.email))
-        if result.scalar_one_or_none():
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
+    If a users row with id == supabase_sub already exists it is returned
+    directly. Otherwise a new users row and a default profiles row are
+    created and flushed so the caller receives a fully-populated User object.
 
-        user = User(name=data.name, email=data.email, password_hash=hash_password(data.password))
-        self.db.add(user)
-        await self.db.flush()
+    Args:
+        supabase_sub: The ``sub`` claim from the Supabase JWT (user UUID).
+        email: The ``email`` claim from the Supabase JWT.
+        name: Display name hint (may be empty; falls back to email prefix).
+        db: Active async database session.
 
-        profile = Profile(user_id=user.id)
-        self.db.add(profile)
-        await self.db.flush()
+    Returns:
+        The application User ORM object (may be newly created).
+    """
+    result = await db.execute(select(User).where(User.id == supabase_sub))
+    user: User | None = result.scalar_one_or_none()
 
-        logger.info(f"New user registered: {user.email}")
+    if user is not None:
         return user
 
-    async def login(self, data: LoginRequest) -> TokenResponse:
-        result = await self.db.execute(select(User).where(User.email == data.email))
-        user = result.scalar_one_or_none()
+    display_name = name.strip() if name.strip() else email.split("@")[0]
 
-        if not user or not verify_password(data.password, user.password_hash):
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
-        if not user.is_active:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account deactivated")
+    user = User(
+        id=supabase_sub,
+        name=display_name,
+        email=email,
+        # Supabase owns credentials — no local password hash needed.
+        password_hash="",
+    )
+    db.add(user)
+    await db.flush()
 
-        token_data = {"sub": user.id, "email": user.email, "role": user.role}
-        return TokenResponse(
-            access_token=create_access_token(token_data),
-            refresh_token=create_refresh_token(token_data),
-            expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        )
+    profile = Profile(user_id=user.id)
+    db.add(profile)
+    await db.flush()
 
-    async def refresh_tokens(self, refresh_token: str) -> TokenResponse:
-        payload = decode_token(refresh_token)
-        if payload.get("type") != "refresh":
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Expected refresh token")
-
-        result = await self.db.execute(select(User).where(User.id == payload.get("sub")))
-        user = result.scalar_one_or_none()
-        if not user or not user.is_active:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found or deactivated")
-
-        token_data = {"sub": user.id, "email": user.email, "role": user.role}
-        return TokenResponse(
-            access_token=create_access_token(token_data),
-            refresh_token=create_refresh_token(token_data),
-            expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        )
+    logger.info("Auto-created application user for Supabase sub=%s email=%s", supabase_sub, email)
+    return user

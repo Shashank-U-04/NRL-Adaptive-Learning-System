@@ -16,11 +16,8 @@ from app.core.config import (
     CORS_ORIGINS,
     ENVIRONMENT,
 )
-from app.core.cost_tracker import cost_tracker
 from app.core.database import engine, init_db
 from app.core.logging_config import setup_logging
-from app.core.metrics import setup_metrics
-from app.core.rate_limit import setup_rate_limiting
 
 setup_logging()
 logger = logging.getLogger("nrl")
@@ -33,31 +30,15 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("Database tables verified.")
 
-    # Pre-warm RL engine
-    from app.services.rl_service import get_rl_service
+    # Pre-warm adaptive engine
+    from app.adaptive.engine import get_adaptive_engine
 
-    get_rl_service()
-    logger.info("RL service initialised.")
-
-    # Pre-warm AI provider (best-effort, non-fatal)
-    try:
-        from app.services.ai_provider import get_ai_provider
-
-        provider = await get_ai_provider()
-        health = await provider.health()
-        logger.info(f"AI provider ready: preferred={health['preferred']}")
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(f"AI provider warm-up failed (non-fatal): {exc}")
+    get_adaptive_engine()
+    logger.info("Adaptive engine initialised.")
 
     yield
 
-    logger.info("Shutting down — closing DB engine and AI client.")
-    try:
-        from app.services.ai_provider import get_ai_provider
-
-        await (await get_ai_provider()).close()
-    except Exception:  # noqa: BLE001
-        pass
+    logger.info("Shutting down — closing DB engine.")
     await engine.dispose()
 
 
@@ -76,10 +57,6 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
 )
-
-setup_rate_limiting(app)
-setup_metrics(app)
-
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next) -> Response:
@@ -129,16 +106,3 @@ async def root():
     }
 
 
-@app.get("/system/ai", tags=["System"])
-async def ai_health():
-    """Show which AI providers are available and which is preferred."""
-    from app.services.ai_provider import get_ai_provider
-
-    provider = await get_ai_provider()
-    return await provider.health()
-
-
-@app.get("/system/cost", tags=["System"])
-async def ai_cost_report():
-    """Return monthly AI usage and remaining budget."""
-    return await cost_tracker.report()

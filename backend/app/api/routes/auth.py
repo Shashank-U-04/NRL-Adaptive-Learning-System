@@ -1,61 +1,24 @@
 """
 NRL Adaptive Learning System — Auth Router
 
-POST /auth/register, /auth/login, /auth/refresh, GET /auth/me, PUT /auth/profile
+GET  /auth/me      — return current user + profile (Supabase JWT required)
+PUT  /auth/profile — update display name / daily goal
 """
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import RATE_LIMIT_AUTH
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
-from app.core.rate_limit import limiter
 from app.models.models import User
 from app.schemas.schemas import (
-    LoginRequest,
     MeResponse,
     ProfileResponse,
-    RefreshRequest,
-    RegisterRequest,
-    TokenResponse,
     UpdateProfileRequest,
     UserResponse,
 )
-from app.services.auth_service import AuthService
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
-
-
-@router.post(
-    "/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED
-)
-@limiter.limit(RATE_LIMIT_AUTH)
-async def register(
-    request: Request,
-    data: RegisterRequest,
-    db: AsyncSession = Depends(get_db),
-):
-    service = AuthService(db)
-    await service.register(data)
-    return await service.login(LoginRequest(email=data.email, password=data.password))
-
-
-@router.post("/login", response_model=TokenResponse)
-@limiter.limit(RATE_LIMIT_AUTH)
-async def login(
-    request: Request,
-    data: LoginRequest,
-    db: AsyncSession = Depends(get_db),
-):
-    service = AuthService(db)
-    return await service.login(data)
-
-
-@router.post("/refresh", response_model=TokenResponse)
-async def refresh(data: RefreshRequest, db: AsyncSession = Depends(get_db)):
-    service = AuthService(db)
-    return await service.refresh_tokens(data.refresh_token)
 
 
 @router.get("/me", response_model=MeResponse)

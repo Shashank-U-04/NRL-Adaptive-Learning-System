@@ -4,46 +4,12 @@ NRL Adaptive Learning System — Pydantic Schemas
 All request/response models for the API.
 """
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field
 from datetime import datetime
 from typing import Optional
-import re
 
 
 # ── Auth ─────────────────────────────────────────────────
-class RegisterRequest(BaseModel):
-    name: str = Field(..., min_length=2, max_length=100)
-    email: EmailStr
-    password: str = Field(..., min_length=8, max_length=128)
-
-    @field_validator("password")
-    @classmethod
-    def validate_password(cls, v: str) -> str:
-        if not re.search(r"[A-Z]", v):
-            raise ValueError("Must contain at least one uppercase letter")
-        if not re.search(r"[a-z]", v):
-            raise ValueError("Must contain at least one lowercase letter")
-        if not re.search(r"\d", v):
-            raise ValueError("Must contain at least one digit")
-        return v
-
-
-class LoginRequest(BaseModel):
-    email: EmailStr
-    password: str
-
-
-class TokenResponse(BaseModel):
-    access_token: str
-    refresh_token: str
-    token_type: str = "bearer"
-    expires_in: int
-
-
-class RefreshRequest(BaseModel):
-    refresh_token: str
-
-
 class UserResponse(BaseModel):
     id: str
     name: str

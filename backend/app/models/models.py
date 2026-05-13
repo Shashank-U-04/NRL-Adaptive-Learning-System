@@ -31,11 +31,11 @@ def _uuid() -> str:
 
 class User(Base):
     __tablename__ = "users"
+    # Identity managed by Supabase auth.users — no password stored here
 
     id = Column(String, primary_key=True, default=_uuid)
     name = Column(String(100), nullable=False)
     email = Column(String(255), unique=True, index=True, nullable=False)
-    password_hash = Column(String(255), nullable=False)
     role = Column(String(20), default="student", nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
