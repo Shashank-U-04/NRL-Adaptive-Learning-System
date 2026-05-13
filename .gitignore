@@ -57,6 +57,9 @@ yarn-debug.log*
 # ── OS ───────────────────────────────────────────────
 .DS_Store
 Thumbs.db
+
+# ── Claude Code local settings (may contain dev credentials) ──
+.claude/settings.local.json
 desktop.ini
 *.swp
 *~
