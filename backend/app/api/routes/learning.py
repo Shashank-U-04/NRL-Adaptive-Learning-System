@@ -27,7 +27,6 @@ from app.core.dependencies import get_current_user
 from app.models.models import (
     LearningModule, LearningEvent, ModuleProgress, Topic, User,
 )
-from app.services.ai_generation_service import generate_learning_module
 
 logger = logging.getLogger("nrl.learning")
 router = APIRouter(prefix="/learning", tags=["Learning Mode"])
@@ -187,8 +186,8 @@ async def get_module(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Retrieve a module. If it doesn't exist yet, trigger AI generation
-    (with Redis lock + idempotency guarantees).
+    Retrieve a seeded learning module. Returns 404 if not found;
+    run seed.py to populate modules.
     """
     # Check existing
     stmt = select(LearningModule).where(
@@ -199,14 +198,9 @@ async def get_module(
     if module:
         return {"success": True, "data": {"module": module.content}}
 
-    # AI-generate (validates topic allowlist internally on topic creation)
-    content = await generate_learning_module(topic_id, db)
-    if content:
-        return {"success": True, "data": {"module": content}}
-
     raise HTTPException(
-        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail="Module generation failed and no fallback is available.",
+        status_code=404,
+        detail="Module not found. Seed the database to add content.",
     )
 
 

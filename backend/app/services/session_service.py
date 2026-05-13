@@ -23,7 +23,8 @@ from app.models.models import (
     User, Session, SessionEvent, Question, QuestionAttempt,
     Topic, LearnerMetric, Profile,
 )
-from app.services.rl_service import get_rl_service, RLService, ACTIONS
+from app.adaptive.engine import get_adaptive_engine, AdaptiveEngine
+from app.adaptive.rules import ACTIONS
 from app.core.config import ROOT_DIR, SESSION_TTL_SECONDS
 from app.schemas.schemas import (
     QuestionPayload, StartSessionResponse,
@@ -103,7 +104,7 @@ def _cache_delete(session_id: str) -> None:
 class SessionService:
     def __init__(self, db: AsyncSession):
         self.db = db
-        self.rl: RLService = get_rl_service()
+        self.rl: AdaptiveEngine = get_adaptive_engine()
 
     # ── Public methods ────────────────────────────────────
 
@@ -224,7 +225,7 @@ class SessionService:
         is_improvement = new_acc > prev_accuracy
         is_repeated_mistake = (not is_correct) and state.get("quiz_accuracy", 0.5) < 0.4
 
-        reward = RLService.calculate_reward(
+        reward = AdaptiveEngine.calculate_reward(
             is_correct=is_correct,
             is_improvement=is_improvement,
             is_repeated_mistake=is_repeated_mistake,
@@ -382,23 +383,7 @@ class SessionService:
                 source=db_q.source,
             )
 
-        # 5. Trigger AI generation as a final fallback
-        try:
-            from app.services.ai_question_service import get_or_create_ai_question
-
-            db_q = await get_or_create_ai_question(self.db, topic, difficulty)
-            return QuestionPayload(
-                id=db_q.id,
-                text=db_q.text,
-                options=db_q.options,
-                difficulty=db_q.difficulty,
-                topic_name=db_q.topic_id,
-                hint_available=db_q.hint is not None,
-                source=db_q.source,
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(f"AI question fallback failed for {topic}/{difficulty}: {exc}")
-            return None
+        return None
 
     def _update_state(self, state: dict, is_correct: bool, time_taken: int) -> dict:
         """

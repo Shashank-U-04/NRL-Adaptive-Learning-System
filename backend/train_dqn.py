@@ -13,7 +13,7 @@ import torch.nn as nn
 import torch.optim as optim
 
 from app.ml.dqn_model import DQN, ReplayBuffer, encode_state
-from app.services.rl_service import ACTIONS
+from app.adaptive.rules import ACTIONS
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)

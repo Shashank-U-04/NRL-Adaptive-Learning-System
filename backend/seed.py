@@ -10,7 +10,8 @@ import asyncio
 from sqlalchemy import select, func
 
 from app.core.database import init_db, AsyncSessionLocal
-from app.models.models import Question, Topic
+from app.models.models import LearningModule, Question, Topic
+from app.services.module_service import build_static_module
 
 
 # (id, title, description, order_index)
@@ -248,6 +249,32 @@ async def seed() -> None:
 
         await session.commit()
         print(f"[OK] Added {added} new questions.")
+
+        # Seed learning modules (static content for each topic)
+        modules_added = 0
+        for tid, title, _desc, _order in TOPICS:
+            already = (
+                await session.execute(
+                    select(LearningModule).where(
+                        LearningModule.topic_id == tid,
+                        LearningModule.is_active == True,  # noqa: E712
+                    )
+                )
+            ).scalar_one_or_none()
+            if already:
+                continue
+            content = build_static_module(tid, title)
+            session.add(
+                LearningModule(
+                    topic_id=tid,
+                    content=content,
+                    is_ai_generated=False,
+                )
+            )
+            modules_added += 1
+
+        await session.commit()
+        print(f"[OK] Added {modules_added} new learning modules.")
 
 
 if __name__ == "__main__":
