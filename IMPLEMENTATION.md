@@ -1,171 +1,186 @@
 # NRL Adaptive Learning System — Implementation Reference
 
-**Last updated**: 2026-05-05 | **Branch**: main | **Status**: Active development
+**Last updated**: 2026-05-13 | **Branch**: main | **Version**: 2.1.0
 
 ---
 
 ## Current Stack
 
 | Layer | Technology |
-|-------|-----------|
-| Frontend | Next.js 15, React 19, TypeScript, Tailwind CSS, Recharts, Framer Motion |
-| Backend | FastAPI, Python 3.12, SQLAlchemy (async), Pydantic v2 |
-| Database | SQLite (`backend/database.db`) — async via aiosqlite |
-| Auth | JWT (access + refresh tokens), bcrypt |
-| AI Engine | Hybrid: Q-Learning agent + DQN model + rule-based fallback |
-| AI Content | OpenAI API (with caching) + provider abstraction layer |
-| Sessions | In-memory Python dict cache (no Redis) |
+|-------|------------|
+| Frontend | Next.js 16, React 19, TypeScript, Tailwind CSS v4, Recharts, Framer Motion |
+| Backend | FastAPI 0.115, Python 3.11+, SQLAlchemy 2.0 async, Pydantic v2 |
+| Database | PostgreSQL (Neon cloud) — async via asyncpg |
+| Auth | Supabase Auth — JWT validated server-side with PyJWT (HS256, audience: "authenticated") |
+| Adaptive Engine | 3-phase hybrid: safety rules → DQN (PyTorch, optional) → heuristic fallback |
+| Content | Static JSON datasets — no external AI API dependency |
+
+---
+
+## Architecture Overview
+
+### Authentication Flow
+
+```
+Browser  →  Supabase JS (signIn/signUp/signOut)
+         →  Supabase issues JWT
+         →  Frontend sends JWT in Authorization header
+         →  Backend validates with SUPABASE_JWT_SECRET (PyJWT)
+         →  On first login: auto-creates user row in DB (sync_user)
+```
+
+### Adaptive Engine (backend/app/adaptive/)
+
+```
+Request comes in with learner state (7 features):
+  quiz_accuracy, recent_trend, topic_confidence,
+  consecutive_correct, consecutive_wrong,
+  session_count, difficulty_level
+
+Phase 1: Safety rules  (deterministic, always override)
+  → e.g. force easier if 3 consecutive wrong answers
+Phase 2: DQN inference (if dqn_agent.pt weights present)
+  → Neural policy with action masking
+Phase 3: Heuristic fallback (always available)
+  → Rule-based difficulty adjustment
+
+Output: (action, confidence, explanation)
+```
+
+### Static Content Pipeline
+
+Learning modules are defined in JSON files under `backend/app/data/` and `frontend/src/data/`. The `seed.py` script reads these and populates the `learning_modules` table. No AI generation — zero runtime API cost.
 
 ---
 
 ## Implemented Features
 
 ### Authentication
-- Register with email + password (bcrypt hashed)
-- Login returns JWT access + refresh tokens
-- Token refresh endpoint
-- Protected routes via `get_current_user` dependency
-- User profile read/update
+- Supabase sign-up and sign-in (email/password)
+- JWT validated server-side — no bcrypt, no custom token management
+- First-login auto-sync: creates DB user row from Supabase JWT claims
+- GET /me — returns authenticated user profile
+- PUT /profile — update display name, avatar
 
 ### Adaptive Quiz Sessions
-- Start session by topic name or ID (auto-creates missing topics)
-- Q-Learning + DQN hybrid selects next question difficulty
-- Answer submission returns: is_correct, xp_earned, explanation, next_question
-- Session end computes accuracy, total XP, duration
-- Session history (last N sessions)
-- In-memory session cache for active sessions
+- Start session by topic ID — creates session record
+- Adaptive engine selects action: difficulty up/down/same, hint, next topic, review, explain
+- Answer submission: records attempt, computes XP, triggers adaptive state update
+- Session end: accuracy, total XP, duration summary
+- Session history (last N sessions per user)
 
 ### Analytics
-- Dashboard: XP, streak, accuracy, sessions completed, weak topics, recent sessions
-- Accuracy trend over time (per session)
-- Topic mastery scores (per topic)
+- Dashboard: total XP, streak, overall accuracy, sessions completed
+- Weak topics detection (accuracy below threshold)
+- Accuracy trend chart (per session over time)
+- Recent session list
 
 ### Leaderboard
-- Global XP ranking with pagination
+- Global ranking by total XP
+- Topic-specific leaderboard
+- Shows display name, XP, rank
 
 ### Learning Modules
-- List modules with pagination (GET /learning/modules)
-- Fetch or AI-generate module for a topic (GET /learning/modules/{topic_id})
-- Inline MCQ submission (POST /learning/mcq)
-- Lab submission validation — safe pattern matching, no code execution (POST /learning/lab)
-- Mark module completed (POST /learning/complete)
-
-### Gamification
-- XP earned per correct answer (tracked on UserProfile)
-- Daily streak tracking (current + longest)
-- Knowledge level classification (beginner / intermediate / advanced)
-
-### AI / ML Layer
-- `rl_service.py`: Hybrid recommender — deterministic safety rules + Q-table policy
-- `ai_provider.py`: Multi-provider abstraction (OpenAI, fallback-ready)
-- `ai_generation_service.py`: Generate learning module content via AI, with DB caching
-- `ai_question_service.py`: AI-assisted question generation
-- `backend/app/ml/`: Q-agent, DQN model, student environment (v1 + v2), training scripts
-
-### Infrastructure
-- Docker support: `backend/Dockerfile`, `docker-compose.yml`
-- Fly.io config: `backend/fly.toml`
-- Structured logging: `backend/app/core/logging_config.py`
-- Rate limiting: `backend/app/core/rate_limit.py`
-- Cost tracker: `backend/app/core/cost_tracker.py`
-- Metrics: `backend/app/core/metrics.py`
-- CI: `.github/workflows/` (GitHub Actions)
+- Module catalog (list all topics)
+- Module detail with structured content blocks: text, MCQ, diagram, lab, scenario, summary
+- Interactive lab panel (pattern matching simulation, no code execution)
+- Inline quiz engine with immediate feedback
 
 ---
 
 ## API Endpoints
 
-All routes are prefixed `/api/v1`.
+All routes prefixed with `/api/v1`.
 
-### Auth (`/api/v1/auth`)
+### Auth — `/auth`
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/auth/register` | Create user account |
-| POST | `/auth/login` | Login, returns JWT tokens |
-| POST | `/auth/refresh` | Refresh access token |
-| GET | `/auth/me` | Current user + profile |
-| PUT | `/auth/profile` | Update profile |
+| GET | `/auth/me` | Get current user profile |
+| PUT | `/auth/profile` | Update display name / avatar |
 
-### Sessions (`/api/v1/sessions`)
+### Sessions — `/sessions`
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/sessions/start` | Start adaptive quiz session |
-| POST | `/sessions/answer` | Submit answer, get next question |
-| POST | `/sessions/end` | End session, get summary |
-| GET | `/sessions/history` | Past sessions (limit param) |
+| POST | `/sessions/start` | Start adaptive learning session |
+| POST | `/sessions/{id}/answer` | Submit answer, get feedback + next action |
+| POST | `/sessions/{id}/end` | End session, get summary |
+| GET | `/sessions/history` | Last N sessions for current user |
 
-### Analytics (`/api/v1/analytics`)
+### Analytics — `/analytics`
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/analytics/dashboard` | XP, streak, accuracy, weak topics |
-| GET | `/analytics/accuracy` | Accuracy per session (trend) |
-| GET | `/analytics/topics` | Topic mastery scores |
+| GET | `/analytics/trend` | Accuracy over time (chart data) |
 
-### Leaderboard (`/api/v1/leaderboard`)
+### Leaderboard — `/leaderboard`
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/leaderboard` | Global XP ranking |
+| GET | `/leaderboard` | Global XP leaderboard |
+| GET | `/leaderboard/{topic_id}` | Topic-specific leaderboard |
 
-### Learning (`/api/v1/learning`)
+### Learning — `/learning`
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/learning/modules` | Paginated module list |
-| GET | `/learning/modules/{topic_id}` | Fetch or AI-generate module |
-| POST | `/learning/mcq` | Submit inline MCQ answer |
-| POST | `/learning/lab` | Submit lab answer (safe pattern match) |
-| POST | `/learning/complete` | Mark module completed |
+| GET | `/learning/modules` | List all learning modules |
+| GET | `/learning/modules/{id}` | Get module content |
+
+### System
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/health` | Health check |
+| GET | `/` | API root + links |
+
+---
+
+## Database Schema (key tables)
+
+```
+users           id (uuid, FK to Supabase auth.users), email, display_name,
+                xp, streak, current_level, knowledge_state (JSON)
+
+learning_modules id, topic, title, difficulty, content (JSON), order_index
+
+sessions        id, user_id, topic_id, started_at, ended_at,
+                accuracy, xp_earned, question_count
+
+session_attempts id, session_id, question_id, is_correct, response_time_ms,
+                 adaptive_action, reward
+
+leaderboard     (view) user_id, display_name, total_xp, rank
+```
 
 ---
 
 ## Frontend Pages
 
-| Route | File | Status |
-|-------|------|--------|
-| `/` | `app/page.tsx` | Landing page |
-| `/login` | `app/login/` | Auth form |
-| `/register` | `app/register/` | Auth form |
-| `/dashboard` | `app/dashboard/` | Stats + charts |
-| `/session` | `app/session/` | Adaptive quiz |
-| `/analytics` | `app/analytics/` | Deep analytics |
-| `/leaderboard` | `app/leaderboard/` | XP ranking |
-| `/learning` | `app/learning/` | Browse modules |
-| `/profile` | `app/profile/` | User profile |
+| Route | Page |
+|-------|------|
+| `/` | Landing page |
+| `/login` | Supabase sign-in |
+| `/register` | Supabase sign-up |
+| `/dashboard` | XP, streak, analytics overview |
+| `/learning` | Module catalog |
+| `/session` | Active quiz session |
+| `/analytics` | Charts, weak topics, trend |
+| `/leaderboard` | Global rankings |
+| `/profile` | User settings |
 
 ---
 
-## Upgrade Roadmap
+## Roadmap
 
-### Phase 1 — Foundation (Weeks 1–4) `in progress`
-- [x] Docker containerization (backend + compose)
-- [x] Fly.io deployment config
-- [x] Structured logging + metrics + rate limiting
-- [x] GitHub Actions CI setup
-- [ ] Full CI/CD pipeline (test → build → deploy)
-- [ ] Terraform / IaC modules
+### Near-term
+- [ ] Run DB migration and full end-to-end boot test
+- [ ] Seed database with initial cybersecurity modules
+- [ ] Train DQN on simulated student trajectories → deploy `dqn_agent.pt`
+- [ ] Add more content topics (network security, cryptography, OSINT)
 
-### Phase 2 — Database & Caching (Weeks 5–8)
-- [ ] Migrate SQLite → Neon PostgreSQL (free tier, 500MB)
-- [ ] Alembic migration framework
-- [ ] Session cache persistence (SQLite TTL layer)
-- [ ] Connection pooling + query index tuning
+### Medium-term
+- [ ] Fly.io deployment for backend
+- [ ] Vercel deployment for frontend
+- [ ] CI: pytest + Next.js build on every PR
 
-### Phase 3 — Production Deployment (Weeks 9–11)
-- [ ] Fly.io live deployment
-- [ ] Automated deploys via GitHub Actions
-- [ ] SSL, health checks, alert rules
-- [ ] Runbook documentation
-
-### Phase 4 — AI Cost Optimization (Weeks 12–16)
-- [ ] Semantic caching for AI-generated content (>80% cache hit target)
-- [ ] Local LLM fallback (Ollama) when OpenAI quota exhausted
-- [ ] Cost tracking alerts ($10/month threshold)
-- [ ] Advanced analytics (difficulty calibration, cohort analysis)
-
----
-
-## Key Architectural Decisions
-
-- **SQLite over PostgreSQL for now**: Zero external dependencies for local dev; Neon migration planned for Phase 2
-- **In-memory session cache**: Avoids Redis cost; sufficient for current load; will add TTL persistence in Phase 2
-- **Hybrid AI recommender**: Safety rules prevent bad UX (70%), Q-table optimizes long-term reward (30%); every decision is human-readable
-- **Multi-provider AI abstraction**: `ai_provider.py` decouples from OpenAI, enabling future Ollama/DeepSeek fallback without touching session logic
+### Future
+- [ ] Spaced repetition scheduling
+- [ ] Per-topic weak area detection with targeted review sessions
+- [ ] Multiplayer challenge mode (head-to-head quiz)
