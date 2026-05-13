@@ -287,7 +287,7 @@ export default function ProfilePage() {
 
           {/* Danger zone */}
           <div className="glass" style={{ padding: 20, borderColor: "rgba(239,68,68,0.2)" }}>
-            <p className="section-h" style={{ color: "#FECACA", marginBottom: 8 }}>Danger zone</p>
+            <p className="section-h" style={{ color: "var(--red)", marginBottom: 8 }}>Danger zone</p>
             <p style={{ color: "var(--text-2)", fontSize: 13, marginBottom: 16 }}>
               Permanently delete your account and all associated data. This action cannot be undone.
             </p>

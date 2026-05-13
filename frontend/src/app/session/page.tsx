@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useEffect, useState, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { sessionApi, type QuestionPayload } from "@/lib/api";
@@ -206,6 +208,8 @@ export default function SessionPage() {
   const formatTime = (s: number) =>
     `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
 
+  const isSessionLoading = sessionState === "loading";
+
   // ── Idle state ───────────────────────────────────────
   if (sessionState === "idle") {
     return (
@@ -251,7 +255,7 @@ export default function SessionPage() {
               <button
                 className="btn btn-primary"
                 onClick={() => startSession(selectedTopic)}
-                disabled={sessionState === "loading"}
+                disabled={isSessionLoading}
               >
                 <Play size={15} />
                 Start →
@@ -265,7 +269,7 @@ export default function SessionPage() {
                   key={id}
                   className="glass glass-hover"
                   onClick={() => startSession(id)}
-                  disabled={sessionState === "loading"}
+                  disabled={isSessionLoading}
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -273,9 +277,6 @@ export default function SessionPage() {
                     padding: "18px 20px",
                     cursor: "pointer",
                     textAlign: "left",
-                    border: "1px solid var(--line)",
-                    borderRadius: 14,
-                    background: "rgba(255,255,255,0.035)",
                     width: "100%",
                     transition: "background 120ms ease, border-color 120ms ease",
                   }}

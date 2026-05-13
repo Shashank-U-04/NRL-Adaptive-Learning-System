@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Lab } from "../types";
 import SkeuomorphicPanel from "@/components/ui/SkeuomorphicPanel";

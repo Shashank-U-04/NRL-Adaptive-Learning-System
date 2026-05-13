@@ -33,18 +33,20 @@ export function Sparkline({ data, color = "#3B82F6", height = 32 }: {
   const min = Math.min(...data), max = Math.max(...data);
   const range = max - min || 1;
   const pts: Pt[] = data.map((v, i) => ({
-    x: pad + (i / (data.length - 1)) * (W - pad * 2),
+    x: pad + (data.length > 1 ? (i / (data.length - 1)) : 0.5) * (W - pad * 2),
     y: H - pad - ((v - min) / range) * (H - pad * 2),
   }));
   return (
     <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ width: "100%", height }}>
       <defs>
         <linearGradient id={`spark-${id}`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity={0.4} />
+          <stop offset="0%" stopColor={color} stopOpacity={0.3} />
           <stop offset="100%" stopColor={color} stopOpacity={0} />
         </linearGradient>
       </defs>
-      <path d={`${smoothPath(pts)} L ${pts[pts.length-1].x},${H} L ${pts[0].x},${H} Z`} fill={`url(#spark-${id})`} />
+      {pts.length >= 2 && (
+        <path d={`${smoothPath(pts)} L ${pts[pts.length-1].x},${H} L ${pts[0].x},${H} Z`} fill={`url(#spark-${id})`} />
+      )}
       <path d={smoothPath(pts)} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   );
@@ -66,11 +68,17 @@ export function LineChart({ data, xKey, yKey, color = "#3B82F6", height = 220, y
   const W = 600, H = height;
   const padL = 36, padR = 12, padT = 12, padB = 26;
   const innerW = W - padL - padR, innerH = H - padT - padB;
-  const pts: (Pt & { raw: Record<string, unknown> })[] = data.map((d, i) => ({
-    x: padL + (i / (data.length - 1)) * innerW,
-    y: padT + (1 - ((d[yKey] as number) - yMin) / (yMax - yMin)) * innerH,
-    raw: d,
-  }));
+  const pts: (Pt & { raw: Record<string, unknown> })[] = data.map((d, i) => {
+    const rawY = typeof d[yKey] === "number" ? (d[yKey] as number) : 0;
+    const clampedY = isFinite(rawY) ? rawY : 0;
+    return {
+      x: data.length > 1 ? padL + (i / (data.length - 1)) * innerW : padL + innerW / 2,
+      y: padT + (1 - (clampedY - yMin) / Math.max(yMax - yMin, 1)) * innerH,
+      raw: d,
+    };
+  });
+
+  if (pts.length === 0) return <div style={{ height }} />;
 
   return (
     <div style={{ position: "relative", width: "100%", height }}>
@@ -89,7 +97,7 @@ export function LineChart({ data, xKey, yKey, color = "#3B82F6", height = 220, y
       >
         <defs>
           <linearGradient id={`lg-${id}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity={0.32} />
+            <stop offset="0%" stopColor={color} stopOpacity={0.2} />
             <stop offset="100%" stopColor={color} stopOpacity={0} />
           </linearGradient>
         </defs>
@@ -98,27 +106,31 @@ export function LineChart({ data, xKey, yKey, color = "#3B82F6", height = 220, y
           const y = padT + (1 - (v - yMin) / (yMax - yMin)) * innerH;
           return (
             <g key={i}>
-              <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="rgba(255,255,255,0.05)" strokeDasharray="3 4" />
-              <text x={padL - 6} y={y + 3} textAnchor="end" fill="rgba(255,255,255,0.4)" fontSize="10">{yFormat(Math.round(v))}</text>
+              <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="rgba(0,0,0,0.07)" strokeDasharray="3 4" />
+              <text x={padL - 6} y={y + 3} textAnchor="end" fill="rgba(0,0,0,0.45)" fontSize="10">{yFormat(Math.round(v))}</text>
             </g>
           );
         })}
         {data.map((d, i) => (
-          <text key={i} x={pts[i].x} y={H - 6} textAnchor="middle" fill="rgba(255,255,255,0.4)" fontSize="10">{String(d[xKey])}</text>
+          <text key={i} x={pts[i].x} y={H - 6} textAnchor="middle" fill="rgba(0,0,0,0.45)" fontSize="10">{String(d[xKey])}</text>
         ))}
-        <path d={`${smoothPath(pts)} L ${pts[pts.length-1].x},${H - padB} L ${pts[0].x},${H - padB} Z`} fill={`url(#lg-${id})`} />
-        <path d={smoothPath(pts)} fill="none" stroke={color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+        {pts.length >= 2 && (
+          <path d={`${smoothPath(pts)} L ${pts[pts.length-1].x},${H - padB} L ${pts[0].x},${H - padB} Z`} fill={`url(#lg-${id})`} />
+        )}
+        {pts.length >= 2 && (
+          <path d={smoothPath(pts)} fill="none" stroke={color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+        )}
         {pts.map((p, i) => (
           <circle key={i} cx={p.x} cy={p.y} r={hover === i ? 4 : 2.5} fill={hover === i ? "#fff" : color} stroke={hover === i ? color : "none"} strokeWidth="2" />
         ))}
-        {hover != null && (
-          <line x1={pts[hover].x} y1={padT} x2={pts[hover].x} y2={H - padB} stroke="rgba(59,130,246,0.4)" strokeDasharray="3 3" />
+        {hover != null && pts[hover] && (
+          <line x1={pts[hover].x} y1={padT} x2={pts[hover].x} y2={H - padB} stroke="rgba(59,130,246,0.35)" strokeDasharray="3 3" />
         )}
       </svg>
-      {hover != null && (
-        <div style={{ position: "absolute", left: `${(pts[hover].x / W) * 100}%`, top: 8, transform: "translateX(-50%)", background: "rgba(20,22,28,0.95)", border: `1px solid ${color}66`, borderRadius: 8, padding: "6px 10px", fontSize: 12, pointerEvents: "none", whiteSpace: "nowrap", zIndex: 10 }}>
+      {hover != null && pts[hover] && (
+        <div style={{ position: "absolute", left: `${(pts[hover].x / W) * 100}%`, top: 8, transform: "translateX(-50%)", background: "rgba(255,255,255,0.97)", border: `1px solid ${color}66`, borderRadius: 8, padding: "6px 10px", fontSize: 12, pointerEvents: "none", whiteSpace: "nowrap", zIndex: 10, boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}>
           <div style={{ color: "var(--text-3)", fontSize: 10 }}>{String(data[hover][xKey])}</div>
-          <div style={{ color: "#fff", fontWeight: 500 }}>{yFormat(data[hover][yKey] as number)}</div>
+          <div style={{ color: "var(--text)", fontWeight: 500 }}>{yFormat(typeof data[hover][yKey] === "number" ? data[hover][yKey] as number : 0)}</div>
         </div>
       )}
     </div>
@@ -138,28 +150,39 @@ export function RadarChart({ data, valueKey, labelKey, max = 100, color = "#3B82
   const r = size * 0.36;
   const n = data.length;
   const angle = (i: number) => -Math.PI / 2 + (i / n) * Math.PI * 2;
-  const pt = (i: number, v: number) => ({
-    x: cx + Math.cos(angle(i)) * r * (v / max),
-    y: cy + Math.sin(angle(i)) * r * (v / max),
-  });
+  const pt = (i: number, v: number) => {
+    const safeV = isFinite(v) ? v : 0;
+    return {
+      x: cx + Math.cos(angle(i)) * r * (safeV / max),
+      y: cy + Math.sin(angle(i)) * r * (safeV / max),
+    };
+  };
   const rings = [0.25, 0.5, 0.75, 1];
-  const polyPoints = data.map((d, i) => { const p = pt(i, d[valueKey] as number); return `${p.x},${p.y}`; }).join(" ");
+  const polyPoints = data.map((d, i) => {
+    const raw = typeof d[valueKey] === "number" ? (d[valueKey] as number) : 0;
+    const p = pt(i, raw);
+    return `${p.x},${p.y}`;
+  }).join(" ");
 
   return (
     <svg viewBox={`0 0 ${size} ${size}`} style={{ width: "100%", height: size }}>
       {rings.map((rv, i) => (
-        <polygon key={i} points={data.map((_, j) => { const a = angle(j); return `${cx + Math.cos(a) * r * rv},${cy + Math.sin(a) * r * rv}`; }).join(" ")} fill="none" stroke="rgba(255,255,255,0.07)" />
+        <polygon key={i} points={data.map((_, j) => { const a = angle(j); return `${cx + Math.cos(a) * r * rv},${cy + Math.sin(a) * r * rv}`; }).join(" ")} fill="none" stroke="rgba(0,0,0,0.08)" />
       ))}
       {data.map((_, i) => {
         const a = angle(i);
-        return <line key={i} x1={cx} y1={cy} x2={cx + Math.cos(a) * r} y2={cy + Math.sin(a) * r} stroke="rgba(255,255,255,0.06)" />;
+        return <line key={i} x1={cx} y1={cy} x2={cx + Math.cos(a) * r} y2={cy + Math.sin(a) * r} stroke="rgba(0,0,0,0.07)" />;
       })}
-      <polygon points={polyPoints} fill={color} fillOpacity="0.18" stroke={color} strokeWidth="2" strokeLinejoin="round" />
-      {data.map((d, i) => { const p = pt(i, d[valueKey] as number); return <circle key={i} cx={p.x} cy={p.y} r="3" fill={color} />; })}
+      <polygon points={polyPoints} fill={color} fillOpacity="0.15" stroke={color} strokeWidth="2" strokeLinejoin="round" />
+      {data.map((d, i) => {
+        const raw = typeof d[valueKey] === "number" ? (d[valueKey] as number) : 0;
+        const p = pt(i, raw);
+        return <circle key={i} cx={p.x} cy={p.y} r="3" fill={color} />;
+      })}
       {data.map((d, i) => {
         const a = angle(i);
         const lr = r + 16;
-        return <text key={i} x={cx + Math.cos(a) * lr} y={cy + Math.sin(a) * lr + 3} textAnchor="middle" fill="rgba(255,255,255,0.65)" fontSize="10">{String(d[labelKey])}</text>;
+        return <text key={i} x={cx + Math.cos(a) * lr} y={cy + Math.sin(a) * lr + 3} textAnchor="middle" fill="rgba(0,0,0,0.6)" fontSize="10">{String(d[labelKey])}</text>;
       })}
     </svg>
   );
@@ -189,8 +212,8 @@ export function StackedBar({ data, keys, colors, xKey, height = 220 }: {
           const y = padT + (1 - f) * innerH;
           return (
             <g key={i}>
-              <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="rgba(255,255,255,0.05)" />
-              <text x={padL - 4} y={y + 3} textAnchor="end" fill="rgba(255,255,255,0.4)" fontSize="10">{Math.round(max * f)}</text>
+              <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="rgba(0,0,0,0.07)" />
+              <text x={padL - 4} y={y + 3} textAnchor="end" fill="rgba(0,0,0,0.45)" fontSize="10">{Math.round(max * f)}</text>
             </g>
           );
         })}
@@ -208,16 +231,16 @@ export function StackedBar({ data, keys, colors, xKey, height = 220 }: {
                   <rect key={k} x={cx - bw / 2} y={y} width={bw} height={Math.max(0, h - 1)} fill={colors[ki]} rx={ki === keys.length - 1 ? 3 : 0} opacity={hover != null && hover !== i ? 0.4 : 1} />
                 );
               })}
-              <text x={cx} y={H - 6} textAnchor="middle" fill="rgba(255,255,255,0.4)" fontSize="10">{String(d[xKey])}</text>
+              <text x={cx} y={H - 6} textAnchor="middle" fill="rgba(0,0,0,0.45)" fontSize="10">{String(d[xKey])}</text>
             </g>
           );
         })}
       </svg>
       {hover != null && (
-        <div style={{ position: "absolute", left: `${((padL + gap * (hover + 0.5)) / W) * 100}%`, top: 8, transform: "translateX(-50%)", background: "rgba(20,22,28,0.95)", border: "1px solid rgba(59,130,246,0.5)", borderRadius: 8, padding: "8px 10px", fontSize: 11, pointerEvents: "none", minWidth: 130, zIndex: 10 }}>
+        <div style={{ position: "absolute", left: `${((padL + gap * (hover + 0.5)) / W) * 100}%`, top: 8, transform: "translateX(-50%)", background: "rgba(255,255,255,0.97)", border: "1px solid rgba(59,130,246,0.4)", borderRadius: 8, padding: "8px 10px", fontSize: 11, pointerEvents: "none", minWidth: 130, zIndex: 10, boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}>
           <div style={{ color: "var(--text-3)", fontSize: 10, marginBottom: 4 }}>{String(data[hover][xKey])}</div>
           {keys.map((k, ki) => (
-            <div key={k} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+            <div key={k} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, color: "var(--text)" }}>
               <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <span style={{ width: 8, height: 8, borderRadius: 2, background: colors[ki], display: "inline-block" }} />{k}
               </span>
@@ -253,7 +276,7 @@ export function Donut({ data, size = 180, thickness = 30 }: {
   });
   return (
     <svg viewBox={`0 0 ${size} ${size}`} style={{ width: "100%", height: size }}>
-      <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth={thickness} />
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(0,0,0,0.06)" strokeWidth={thickness} />
       {arcs.map((a, i) => (
         <path key={i} d={a.d} fill="none" stroke={a.color} strokeWidth={thickness} strokeLinecap="butt" />
       ))}

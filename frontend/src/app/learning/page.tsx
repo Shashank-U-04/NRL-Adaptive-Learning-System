@@ -1,12 +1,13 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { learningApi } from "@/lib/api";
 import AppLayout from "@/components/AppLayout";
-import ModuleCard from "@/features/learning/components/ModuleCard";
 import LessonViewer from "@/features/learning/components/LessonViewer";
 import LabPanel from "@/features/learning/components/LabPanel";
 import QuizEngine from "@/features/learning/components/QuizEngine";
@@ -477,7 +478,7 @@ function ModuleView({
                   >
                     {isDone ? <CheckCircle2 style={{ width: 16, height: 16 }} /> : String(i + 1).padStart(2, "0")}
                   </div>
-                  <span style={{ fontSize: 14, fontWeight: 500, color: isDone ? "#BBF7D0" : "var(--text)" }}>
+                  <span style={{ fontSize: 14, fontWeight: 500, color: isDone ? "var(--green)" : "var(--text)" }}>
                     {lesson.title}
                   </span>
                 </div>
@@ -545,7 +546,7 @@ function ModuleView({
             </h3>
             <p style={{ color: "var(--text-2)", fontSize: 13, maxWidth: 340, margin: 0 }}>
               {progress?.is_completed
-                ? `Your highest score: ${Math.max(...progress.quiz_scores.map((s: any) => s.score))}%`
+                ? `Your highest score: ${progress.quiz_scores.length > 0 ? Math.max(...progress.quiz_scores.map((s: any) => s.score)) : 0}%`
                 : `Test your knowledge of ${module.title} through a randomised adaptive assessment.`}
             </p>
           </div>

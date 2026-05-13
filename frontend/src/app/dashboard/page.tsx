@@ -149,11 +149,9 @@ export default function DashboardPage() {
                   : "Start a session to build your streak."}
               </p>
             </div>
-            <Link href="/session">
-              <button className="btn btn-primary">
-                <Play size={16} />
-                Start new session
-              </button>
+            <Link href="/session" className="btn btn-primary">
+              <Play size={16} />
+              Start new session
             </Link>
           </div>
 
@@ -164,28 +162,28 @@ export default function DashboardPage() {
               label="Total XP"
               color="#3B82F6"
               value={dashboard?.total_xp ?? 0}
-              sparkData={[10, 14, 18, 22, 28, 32, 40, 45]}
+              sparkData={accuracyData ? accuracyData.map((d) => d.reward) : []}
             />
             <StatCard
               icon={Flame}
               label="Current Streak"
               color="#F59E0B"
               value={`${streak} days`}
-              sparkData={[3, 5, 4, 6, 8, 9, 11, 12]}
+              sparkData={accuracyData ? accuracyData.slice(-8).map((_, i) => i + 1) : []}
             />
             <StatCard
               icon={Target}
               label="Avg Accuracy"
               color="#10B981"
               value={`${dashboard?.overall_accuracy ?? 0}%`}
-              sparkData={[70, 72, 68, 76, 79, 82, 85, 88]}
+              sparkData={accuracyData ? accuracyData.map((d) => d.accuracy) : []}
             />
             <StatCard
               icon={BookOpen}
               label="Sessions"
               color="#8B5CF6"
               value={dashboard?.sessions_completed ?? 0}
-              sparkData={[42, 55, 48, 60, 72, 68, 79, 85]}
+              sparkData={accuracyData ? accuracyData.map((d) => d.session_number) : []}
             />
           </div>
 
@@ -250,10 +248,8 @@ export default function DashboardPage() {
                 Personalized path based on your recent performance.
               </div>
             </div>
-            <Link href="/session">
-              <button className="btn btn-ghost" style={{ height: 36, whiteSpace: "nowrap" }}>
-                Start track →
-              </button>
+            <Link href="/session" className="btn btn-ghost" style={{ height: 36, whiteSpace: "nowrap" }}>
+              Start track →
             </Link>
           </div>
 
@@ -261,10 +257,8 @@ export default function DashboardPage() {
           <div className="glass" style={{ padding: 0, overflow: "hidden" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "18px 20px 12px" }}>
               <h2 className="section-h">Recent sessions</h2>
-              <Link href="/analytics">
-                <button className="btn btn-ghost" style={{ height: 30, fontSize: 12 }}>
-                  View all
-                </button>
+              <Link href="/analytics" className="btn btn-ghost" style={{ height: 30, fontSize: 12 }}>
+                View all
               </Link>
             </div>
 

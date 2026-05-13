@@ -1,5 +1,30 @@
 export type Difficulty = "beginner" | "intermediate" | "advanced";
 
+// ── Learning block types for LearningRenderer / ContentBlock ──
+export type LearningBlock =
+  | { id: string; type: "text"; value: string }
+  | { id: string; type: "image"; url: string; alt: string; caption?: string }
+  | { id: string; type: "diagram"; title: string; steps: string[] }
+  | { id: string; type: "mcq_inline"; question: string; options: string[]; answer: string; explanation: string }
+  | { id: string; type: "scenario"; title: string; situation: string; decisions: { label: string; feedback: string; isBest?: boolean }[] }
+  | { id: string; type: "lab"; title: string; instructions: string; expectedOutput: string; validationLogic: string; successMessage: string; failureMessage: string }
+  | { id: string; type: "summary"; title: string; bullets: string[] };
+
+export interface LearningEvent {
+  blockId: string;
+  type: "mcq_inline" | "lab";
+  correct: boolean;
+}
+
+export interface LearningModule {
+  topicId: string;
+  title: string;
+  description: string;
+  difficulty: string;
+  estimatedMinutes: number;
+  content: LearningBlock[];
+}
+
 export type QuestionType = "mcq" | "short";
 
 export interface Question {
