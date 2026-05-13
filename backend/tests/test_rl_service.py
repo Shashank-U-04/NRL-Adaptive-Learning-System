@@ -1,8 +1,9 @@
-"""Unit tests for the RL recommendation engine (no DB / network needed)."""
+"""Unit tests for the adaptive recommendation engine (no DB / network needed)."""
 
 import pytest
 
-from app.services.rl_service import RLService, ACTIONS
+from app.adaptive.engine import AdaptiveEngine as RLService
+from app.adaptive.rules import ACTIONS
 
 
 def test_initial_state_shape():

@@ -21,6 +21,8 @@ os.environ.setdefault("AI_PROVIDER", "none")
 os.environ.setdefault("OLLAMA_TIMEOUT_SECONDS", "2")  # fail-fast in tests
 os.environ.setdefault("SECRET_KEY", "test-secret-key-32-characters-long-padding")
 os.environ.setdefault("DEBUG", "true")
+# Supabase JWT secret is required at startup; provide a test sentinel
+os.environ.setdefault("SUPABASE_JWT_SECRET", "test-supabase-jwt-secret-sentinel")
 
 # Ensure repo root is on sys.path
 ROOT = Path(__file__).resolve().parent.parent.parent

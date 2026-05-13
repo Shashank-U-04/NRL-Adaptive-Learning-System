@@ -16,8 +16,8 @@ torch = pytest.importorskip("torch")  # noqa: F841 (skip whole module if torch m
 from app.core.config import RL_MODEL_PATH
 from app.ml.dqn_model import DQN, encode_state
 from app.ml.student_env_v2 import ACTIONS, AdaptiveStudentEnv
-from app.services.rl_service import ACTIONS as RL_ACTIONS
-from app.services.rl_service import RLService
+from app.adaptive.rules import ACTIONS as RL_ACTIONS
+from app.adaptive.engine import AdaptiveEngine as RLService
 
 
 def _has_trained_weights() -> bool:
