@@ -12,9 +12,6 @@ if [ -d ".venv" ]; then
   source .venv/bin/activate
 fi
 
-# Imports use `backend.app.*` so PYTHONPATH must be the repo root.
-export PYTHONPATH="$ROOT_DIR"
-
 # Prefer foreman / honcho when available
 if command -v foreman >/dev/null 2>&1; then
   exec foreman start
@@ -33,7 +30,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-python -m uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000 &
-( cd frontend && npm run dev ) &
+( cd "$ROOT_DIR/backend" && python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 ) &
+( cd "$ROOT_DIR/frontend" && npm run dev ) &
 
 wait

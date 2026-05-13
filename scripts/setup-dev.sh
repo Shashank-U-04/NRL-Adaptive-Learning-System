@@ -40,5 +40,5 @@ echo
 echo "Next:"
 echo "  1. Start Ollama in a separate terminal:   ollama serve"
 echo "  2. Activate the venv:                     source .venv/bin/activate"
-echo "  3. Seed the database (one time):          python -m backend.seed"
+echo "  3. Seed the database (one time):          ( cd backend && python seed.py )"
 echo "  4. Run frontend + backend together:       ./scripts/run-dev.sh"
