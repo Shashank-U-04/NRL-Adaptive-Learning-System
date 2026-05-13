@@ -2,6 +2,8 @@
  * NRL Adaptive Learning System — API Client
  */
 
+import { supabase } from "./supabase";
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 const API_PREFIX = "/api/v1";
 
@@ -12,42 +14,9 @@ class ApiError extends Error {
   }
 }
 
-function getAccessToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("access_token");
-}
-
-function getRefreshToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("refresh_token");
-}
-
-export function setTokens(access: string, refresh: string): void {
-  localStorage.setItem("access_token", access);
-  localStorage.setItem("refresh_token", refresh);
-}
-
-export function clearTokens(): void {
-  localStorage.removeItem("access_token");
-  localStorage.removeItem("refresh_token");
-}
-
-async function refreshAccessToken(): Promise<boolean> {
-  const rt = getRefreshToken();
-  if (!rt) return false;
-  try {
-    const res = await fetch(`${API_BASE}${API_PREFIX}/auth/refresh`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh_token: rt }),
-    });
-    if (!res.ok) return false;
-    const data = await res.json();
-    setTokens(data.access_token, data.refresh_token);
-    return true;
-  } catch {
-    return false;
-  }
+async function getAccessToken(): Promise<string | null> {
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token ?? null;
 }
 
 async function apiFetch<T>(endpoint: string, options: RequestInit & { skipAuth?: boolean } = {}): Promise<T> {
@@ -55,20 +24,11 @@ async function apiFetch<T>(endpoint: string, options: RequestInit & { skipAuth?:
   const headers: Record<string, string> = { "Content-Type": "application/json", ...(custom as Record<string, string>) };
 
   if (!skipAuth) {
-    const token = getAccessToken();
+    const token = await getAccessToken();
     if (token) headers["Authorization"] = `Bearer ${token}`;
   }
 
-  let res = await fetch(`${API_BASE}${API_PREFIX}${endpoint}`, { headers, ...rest });
-
-  if (res.status === 401 && !skipAuth) {
-    const refreshed = await refreshAccessToken();
-    if (refreshed) {
-      const newToken = getAccessToken();
-      if (newToken) headers["Authorization"] = `Bearer ${newToken}`;
-      res = await fetch(`${API_BASE}${API_PREFIX}${endpoint}`, { headers, ...rest });
-    }
-  }
+  const res = await fetch(`${API_BASE}${API_PREFIX}${endpoint}`, { headers, ...rest });
 
   if (!res.ok) {
     let errorData;
@@ -81,12 +41,6 @@ async function apiFetch<T>(endpoint: string, options: RequestInit & { skipAuth?:
 
 // ── Auth API ────────────────────────────────────────────
 export const authApi = {
-  register: (data: { name: string; email: string; password: string }) =>
-    apiFetch<{ access_token: string; refresh_token: string; expires_in: number }>("/auth/register", { method: "POST", body: JSON.stringify(data), skipAuth: true }),
-
-  login: (data: { email: string; password: string }) =>
-    apiFetch<{ access_token: string; refresh_token: string; expires_in: number }>("/auth/login", { method: "POST", body: JSON.stringify(data), skipAuth: true }),
-
   me: () => apiFetch<{
     user: { id: string; name: string; email: string; role: string; is_active: boolean; created_at: string };
     profile: {
@@ -102,23 +56,11 @@ export const authApi = {
 
 // ── Session API ─────────────────────────────────────────
 export const sessionApi = {
-  start: async (topic?: string) => {
-    // Call the local Next.js proxy instead of the backend directly
-    const token = getAccessToken();
-    const res = await fetch("/api/sessions/start", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(token ? { "Authorization": `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({ topic: topic || null, topic_id: topic || null }),
-    });
-    if (!res.ok) {
-      const errorData = await res.json().catch(() => ({}));
-      throw new ApiError(res.status, errorData.error || "Failed to start session", errorData);
-    }
-    return res.json();
-  },
+  start: (topic?: string) =>
+    apiFetch<{ session_id: string; question: QuestionPayload; explanation: string }>(
+      "/sessions/start",
+      { method: "POST", body: JSON.stringify({ topic: topic || null, topic_id: topic || null }) }
+    ),
 
   answer: (data: { session_id: string; question_id: string; selected_answer: string; time_taken_seconds: number }) =>
     apiFetch<{
@@ -171,12 +113,12 @@ export const leaderboardApi = {
 
 // ── Learning API ───────────────────────────────────────────
 export const learningApi = {
-  getModules: () => 
+  getModules: () =>
     apiFetch<{ success: boolean; data: { modules: any[] }; error?: string }>("/learning/modules"),
-    
+
   getModuleDetail: (id: string) =>
     apiFetch<{ success: boolean; data: { module: any }; error?: string }>(`/learning/modules/${id}`),
-    
+
   getProgress: (topicId: string) =>
     apiFetch<{
       completed_lessons: string[];
@@ -184,17 +126,17 @@ export const learningApi = {
       quiz_scores: any[];
       is_completed: boolean;
     }>(`/learning/progress/${topicId}`),
-    
-  updateProgress: (data: { 
-    topic_id: string; 
-    lesson_id?: string; 
-    lab_id?: string; 
-    quiz_score?: number; 
-    quiz_stats?: any 
+
+  updateProgress: (data: {
+    topic_id: string;
+    lesson_id?: string;
+    lab_id?: string;
+    quiz_score?: number;
+    quiz_stats?: any
   }) =>
-    apiFetch<{ status: string; progress: any }>("/learning/progress/update", { 
-      method: "POST", 
-      body: JSON.stringify(data) 
+    apiFetch<{ status: string; progress: any }>("/learning/progress/update", {
+      method: "POST",
+      body: JSON.stringify(data)
     }),
 };
 

@@ -1,7 +1,8 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
-import { authApi, setTokens, clearTokens } from "@/lib/api";
+import { supabase } from "./supabase";
+import { authApi } from "@/lib/api";
 
 interface User {
   id: string;
@@ -30,7 +31,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
 
@@ -43,40 +44,62 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const refreshUser = useCallback(async () => {
     try {
-      const token = localStorage.getItem("access_token");
-      if (!token) {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session) {
         setUser(null);
         setProfile(null);
         return;
       }
       const data = await authApi.me();
       setUser(data.user);
-      setProfile(data.profile);
+      setProfile(data.profile ?? null);
     } catch {
       setUser(null);
       setProfile(null);
-      clearTokens();
     }
   }, []);
 
   useEffect(() => {
-    refreshUser().finally(() => setIsLoading(false));
+    // Initialize from current session on mount
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) {
+        refreshUser().finally(() => setIsLoading(false));
+      } else {
+        setIsLoading(false);
+      }
+    });
+
+    // Subscribe to auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) {
+        refreshUser();
+      } else {
+        setUser(null);
+        setProfile(null);
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, [refreshUser]);
 
   const login = async (email: string, password: string) => {
-    const data = await authApi.login({ email, password });
-    setTokens(data.access_token, data.refresh_token);
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw new Error(error.message);
     await refreshUser();
   };
 
   const register = async (name: string, email: string, password: string) => {
-    const data = await authApi.register({ name, email, password });
-    setTokens(data.access_token, data.refresh_token);
+    const { error: signUpError } = await supabase.auth.signUp({ email, password });
+    if (signUpError) throw new Error(signUpError.message);
+    const { error: updateError } = await supabase.auth.updateUser({ data: { name } });
+    if (updateError) throw new Error(updateError.message);
     await refreshUser();
   };
 
-  const logout = () => {
-    clearTokens();
+  const logout = async () => {
+    await supabase.auth.signOut();
     setUser(null);
     setProfile(null);
   };
