@@ -3,7 +3,7 @@ NRL Adaptive Learning System — Learning Mode API
 
 Endpoints:
   GET  /api/v1/learning/modules             — paginated module list
-  GET  /api/v1/learning/modules/{topic_id}  — fetch or AI-generate module
+  GET  /api/v1/learning/modules/{topic_id}  — fetch seeded module by topic slug
   POST /api/v1/learning/mcq                 — submit inline MCQ answer
   POST /api/v1/learning/lab                 — validate lab submission
   POST /api/v1/learning/complete            — mark module completed
@@ -161,16 +161,26 @@ async def list_modules(
         .offset(offset)
     )
     modules = (await db.execute(stmt)).scalars().all()
+
+    def _difficulty(raw: object) -> str:
+        return raw if isinstance(raw, str) else "beginner"
+
     return {
         "success": True,
         "data": {
             "modules": [
                 {
+                    "id": m.topic_id,
                     "topic_id": m.topic_id,
                     "title": m.content.get("title", m.topic_id),
-                    "difficulty": m.content.get("difficulty", 1),
-                    "estimatedMinutes": m.content.get("estimatedMinutes", 5),
-                    "is_ai_generated": m.is_ai_generated,
+                    "description": m.content.get("description", ""),
+                    "difficulty": _difficulty(m.content.get("difficulty", "beginner")),
+                    "estimated_minutes": (
+                        m.content.get("estimated_minutes")
+                        or m.content.get("estimatedMinutes")
+                        or 10
+                    ),
+                    "progress": 0,
                 }
                 for m in modules
             ]
@@ -189,19 +199,39 @@ async def get_module(
     Retrieve a seeded learning module. Returns 404 if not found;
     run seed.py to populate modules.
     """
-    # Check existing
     stmt = select(LearningModule).where(
         LearningModule.topic_id == topic_id,
         LearningModule.is_active == True,  # noqa: E712
     )
     module = (await db.execute(stmt)).scalar_one_or_none()
-    if module:
-        return {"success": True, "data": {"module": module.content}}
+    if not module:
+        raise HTTPException(
+            status_code=404,
+            detail="Module not found. Seed the database to add content.",
+        )
 
-    raise HTTPException(
-        status_code=404,
-        detail="Module not found. Seed the database to add content.",
-    )
+    content = module.content
+
+    def _difficulty(raw: object) -> str:
+        return raw if isinstance(raw, str) else "beginner"
+
+    normalized = {
+        "id": content.get("id") or content.get("topic_id") or topic_id,
+        "topic_id": content.get("topic_id", topic_id),
+        "title": content.get("title", topic_id),
+        "description": content.get("description", ""),
+        "difficulty": _difficulty(content.get("difficulty", "beginner")),
+        "estimated_minutes": (
+            content.get("estimated_minutes")
+            or content.get("estimatedMinutes")
+            or 10
+        ),
+        "lessons": content.get("lessons", []),
+        "labs": content.get("labs", []),
+        "quizPool": content.get("quizPool", []),
+        "progress": 0,
+    }
+    return {"success": True, "data": {"module": normalized}}
 
 
 @router.post("/mcq", status_code=status.HTTP_200_OK)

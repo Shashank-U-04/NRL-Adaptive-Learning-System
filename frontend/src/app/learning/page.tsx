@@ -6,12 +6,12 @@ import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { learningApi, type QuizStats, type ServerModule } from "@/lib/api";
+import { learningApi, type QuizStats, type ServerModule, type ServerLesson, type ServerLab, type ServerQuestion } from "@/lib/api";
 import AppLayout from "@/components/AppLayout";
 import LessonViewer from "@/features/learning/components/LessonViewer";
 import LabPanel from "@/features/learning/components/LabPanel";
 import QuizEngine from "@/features/learning/components/QuizEngine";
-import type { Module, Lesson, Lab } from "@/features/learning/types";
+import type { Difficulty, Module, Lesson, Lab, Question } from "@/features/learning/types";
 import {
   Loader2, AlertCircle, RefreshCcw, Trophy, CheckCircle2,
   Terminal, BookOpen, Grid3x3, Clock,
@@ -31,6 +31,48 @@ const TOPIC_COLORS: Record<string, string> = {
 };
 function topicColor(id: string): string {
   return TOPIC_COLORS[id] ?? "#3B82F6";
+}
+
+function serverToModule(s: ServerModule): Module {
+  return {
+    id: s.id,
+    title: s.title,
+    description: s.description ?? "",
+    difficulty: (s.difficulty as Difficulty) ?? "beginner",
+    estimated_minutes: s.estimated_minutes,
+    lessons: (s.lessons ?? []).map((l: ServerLesson): Lesson => ({
+      id: l.id,
+      title: l.title,
+      content: l.content,
+      checkpoints: (l.checkpoints ?? []).map((q: ServerQuestion): Question => ({
+        id: q.id,
+        type: q.type,
+        question: q.question,
+        options: q.options,
+        answer: q.answer,
+        explanation: q.explanation,
+        difficulty: q.difficulty,
+      })),
+      visuals: l.visuals,
+    })),
+    labs: (s.labs ?? []).map((lab: ServerLab): Lab => ({
+      id: lab.id,
+      title: lab.title,
+      description: lab.description,
+      instructions: lab.instructions,
+      expectedOutcome: lab.expectedOutcome,
+    })),
+    quizPool: (s.quizPool ?? []).map((q: ServerQuestion): Question => ({
+      id: q.id,
+      type: q.type,
+      question: q.question,
+      options: q.options,
+      answer: q.answer,
+      explanation: q.explanation,
+      difficulty: q.difficulty,
+    })),
+    progress: s.progress ?? 0,
+  };
 }
 
 function LearningPageInner() {
@@ -136,7 +178,7 @@ function LearningPageInner() {
   if (authLoading) return null;
 
   const modules: ServerModule[] = modulesData?.data?.modules ?? [];
-  const activeModule = detailData?.data?.module as Module | undefined;
+  const activeModule = detailData?.data?.module ? serverToModule(detailData.data.module) : undefined;
   const progress = progressData ?? {
     completed_lessons: [],
     completed_labs: [],
@@ -147,11 +189,11 @@ function LearningPageInner() {
   const hasError = !!(modulesError || detailError || (detailData && !detailData.success));
 
   // Unique topic list for chips
-  const allTopics = Array.from(new Set(modules.map((m) => m.topic ?? m.id)));
+  const allTopics = Array.from(new Set(modules.map((m) => m.topic_id ?? m.id)));
   const visibleModules =
     topicFilter === "all"
       ? modules
-      : modules.filter((m) => (m.topic ?? m.id) === topicFilter);
+      : modules.filter((m) => (m.topic_id ?? m.id) === topicFilter);
 
   return (
     <AppLayout>
@@ -216,7 +258,7 @@ function LearningPageInner() {
                 visibleModules.length > 0 ? (
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
                     {visibleModules.map((module) => {
-                      const color = topicColor(module.topic ?? module.id ?? "");
+                      const color = topicColor(module.topic_id ?? module.id ?? "");
                       const moduleProgress = module.progress ?? 0;
                       const difficulty = module.difficulty ?? "intermediate";
                       const type = module.type ?? "text";
@@ -252,7 +294,7 @@ function LearningPageInner() {
                                 zIndex: 1,
                               }}
                             >
-                              {module.topic ?? module.id}
+                              {module.topic_id ?? module.id}
                             </span>
                             {/* Icon */}
                             <div
