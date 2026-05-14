@@ -58,6 +58,7 @@ export interface Module {
   title: string;
   description: string;
   difficulty: Difficulty;
+  estimated_minutes?: number;
   lessons: Lesson[];
   labs: Lab[];
   quizPool: Question[];
@@ -69,5 +70,6 @@ export interface ModuleSummary {
   title: string;
   description: string;
   difficulty: Difficulty;
+  estimated_minutes?: number;
   progress: number;
 }

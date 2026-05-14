@@ -148,19 +148,50 @@ export const learningApi = {
 };
 
 // ── Types ───────────────────────────────────────────────
-export interface ServerModule {
+export interface ServerQuestion {
   id: string;
+  type: "mcq" | "short";
+  question: string;
+  options?: string[];
+  answer: string;
+  explanation?: string;
+  difficulty: number;
+}
+
+export interface ServerLesson {
+  id: string;
+  title: string;
+  content: string;
+  checkpoints: ServerQuestion[];
+  visuals?: string[];
+}
+
+export interface ServerLab {
+  id: string;
+  title: string;
+  description: string;
+  instructions: string[];
+  expectedOutcome: string;
+}
+
+export interface ServerModule {
+  id: string;                   // required — always equals topic_id
   topic_id?: string;
-  topic?: string;
-  type?: string;
   title: string;
   description?: string;
   difficulty?: string;
   estimated_minutes?: number;
+  progress?: number;
+  // Detail endpoint fields (present in getModuleDetail, absent in list)
+  lessons?: ServerLesson[];
+  labs?: ServerLab[];
+  quizPool?: ServerQuestion[];
+  // Legacy fields for backward compat during transition
   duration?: number;
   is_active?: boolean;
-  progress?: number;
   content?: Record<string, unknown>;
+  type?: string;
+  topic?: string;               // keep for any legacy usage
 }
 
 export interface QuestionPayload {
