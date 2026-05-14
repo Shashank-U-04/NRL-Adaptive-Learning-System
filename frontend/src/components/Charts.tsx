@@ -262,18 +262,22 @@ export function Donut({ data, size = 180, thickness = 30 }: {
   const cx = size / 2, cy = size / 2;
   const r = (size - thickness) / 2;
   const total = data.reduce((a, d) => a + d.value, 0);
-  let acc = -Math.PI / 2;
-  const arcs = data.map(d => {
-    const frac = d.value / total;
-    const a0 = acc;
-    const a1 = acc + frac * Math.PI * 2;
-    acc = a1;
-    const large = a1 - a0 > Math.PI ? 1 : 0;
-    return {
-      d: `M ${cx + Math.cos(a0) * r} ${cy + Math.sin(a0) * r} A ${r} ${r} 0 ${large} 1 ${cx + Math.cos(a1) * r} ${cy + Math.sin(a1) * r}`,
-      color: d.color,
-    };
-  });
+  const arcs = data.reduce<{ items: Array<{ d: string; color: string }>; acc: number }>(
+    ({ items, acc }, d) => {
+      const frac = d.value / total;
+      const a0 = acc;
+      const a1 = acc + frac * Math.PI * 2;
+      const large = a1 - a0 > Math.PI ? 1 : 0;
+      return {
+        items: [...items, {
+          d: `M ${cx + Math.cos(a0) * r} ${cy + Math.sin(a0) * r} A ${r} ${r} 0 ${large} 1 ${cx + Math.cos(a1) * r} ${cy + Math.sin(a1) * r}`,
+          color: d.color,
+        }],
+        acc: a1,
+      };
+    },
+    { items: [], acc: -Math.PI / 2 },
+  ).items;
   return (
     <svg viewBox={`0 0 ${size} ${size}`} style={{ width: "100%", height: size }}>
       <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(0,0,0,0.06)" strokeWidth={thickness} />

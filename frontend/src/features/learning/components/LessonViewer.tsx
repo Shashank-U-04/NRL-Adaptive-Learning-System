@@ -1,12 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { Lesson } from "../types";
 import QnABox from "./QnABox";
 import DiagramBlock from "./DiagramBlock";
 import NeumorphicButton from "@/components/ui/NeumorphicButton";
-import { BookOpen, CheckCircle2, ChevronRight, ChevronLeft } from "lucide-react";
+import { BookOpen, CheckCircle2, ChevronLeft } from "lucide-react";
 
 interface LessonViewerProps {
   lesson: Lesson;

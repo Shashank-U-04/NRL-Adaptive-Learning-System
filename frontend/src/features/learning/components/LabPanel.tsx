@@ -40,7 +40,7 @@ export default function LabPanel({ lab, onComplete, onBack }: LabPanelProps) {
     setTimeout(() => {
       setIsRunning(false);
       
-      let matchedRule = validationRules.find(rule => rule.pattern.test(input));
+      const matchedRule = validationRules.find(rule => rule.pattern.test(input));
       
       if (matchedRule) {
         setOutput(prev => [...prev, `[SIM] ${matchedRule!.response}`]);

@@ -10,7 +10,7 @@ import { Trophy, ArrowRight, CheckCircle2, XCircle, Timer, BarChart3, ChevronLef
 interface QuizEngineProps {
   questions: Question[];
   title: string;
-  onComplete: (score: number, stats: any) => void;
+  onComplete: (score: number, stats: Record<string, unknown>) => void;
   onBack: () => void;
   userWeaknesses?: string[]; // Topics user is struggling with
 }
@@ -21,7 +21,7 @@ export default function QuizEngine({ questions, title, onComplete, onBack, userW
   const [answers, setAnswers] = useState<Record<string, { selected: string, isCorrect: boolean, timeTaken: number }>>({});
   const [showResult, setShowResult] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
-  const [startTime, setStartTime] = useState(Date.now());
+  const [startTime, setStartTime] = useState(() => Date.now());
 
   // 🤖 PRE-RL ADAPTIVE LOGIC: Weighted Random Selection
   // If this is a 'Mixed' quiz, we prioritize questions from userWeaknesses

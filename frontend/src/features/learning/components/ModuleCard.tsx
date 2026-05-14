@@ -3,7 +3,7 @@
 import GlassCard from "@/components/ui/GlassCard";
 import NeumorphicButton from "@/components/ui/NeumorphicButton";
 import { ModuleSummary } from "../types";
-import { BookOpen, Trophy, BarChart } from "lucide-react";
+import { BookOpen, BarChart } from "lucide-react";
 
 interface ModuleCardProps {
   module: ModuleSummary;
