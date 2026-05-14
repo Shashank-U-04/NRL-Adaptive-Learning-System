@@ -208,7 +208,14 @@ class Session(Base):
     @property
     def duration_seconds(self) -> int | None:
         if self.ended_at and self.started_at:
-            return int((self.ended_at - self.started_at).total_seconds())
+            start = self.started_at
+            end = self.ended_at
+            # SQLite returns naive datetimes; normalize both to UTC-aware before subtracting
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=timezone.utc)
+            if end.tzinfo is None:
+                end = end.replace(tzinfo=timezone.utc)
+            return int((end - start).total_seconds())
         return None
 
 
