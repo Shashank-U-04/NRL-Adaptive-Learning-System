@@ -112,18 +112,25 @@ export const leaderboardApi = {
 };
 
 // ── Learning API ───────────────────────────────────────────
+export interface QuizStats {
+  score?: number;
+  total?: number;
+  accuracy?: number;
+  time_spent_seconds?: number;
+}
+
 export const learningApi = {
   getModules: () =>
-    apiFetch<{ success: boolean; data: { modules: any[] }; error?: string }>("/learning/modules"),
+    apiFetch<{ success: boolean; data: { modules: ServerModule[] }; error?: string }>("/learning/modules"),
 
   getModuleDetail: (id: string) =>
-    apiFetch<{ success: boolean; data: { module: any }; error?: string }>(`/learning/modules/${id}`),
+    apiFetch<{ success: boolean; data: { module: ServerModule }; error?: string }>(`/learning/modules/${id}`),
 
   getProgress: (topicId: string) =>
     apiFetch<{
       completed_lessons: string[];
       completed_labs: string[];
-      quiz_scores: any[];
+      quiz_scores: Array<{ score: number; date?: string }>;
       is_completed: boolean;
     }>(`/learning/progress/${topicId}`),
 
@@ -132,15 +139,30 @@ export const learningApi = {
     lesson_id?: string;
     lab_id?: string;
     quiz_score?: number;
-    quiz_stats?: any
+    quiz_stats?: QuizStats;
   }) =>
-    apiFetch<{ status: string; progress: any }>("/learning/progress/update", {
+    apiFetch<{ status: string; progress: Record<string, unknown> }>("/learning/progress/update", {
       method: "POST",
       body: JSON.stringify(data)
     }),
 };
 
 // ── Types ───────────────────────────────────────────────
+export interface ServerModule {
+  id: string;
+  topic_id?: string;
+  topic?: string;
+  type?: string;
+  title: string;
+  description?: string;
+  difficulty?: string;
+  estimated_minutes?: number;
+  duration?: number;
+  is_active?: boolean;
+  progress?: number;
+  content?: Record<string, unknown>;
+}
+
 export interface QuestionPayload {
   id: string; text: string; options: Record<string, string>;
   difficulty: string; topic_name: string; hint_available: boolean; source?: string;
