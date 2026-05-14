@@ -52,66 +52,153 @@ export default function LandingPage() {
           position: "sticky",
           top: 0,
           zIndex: 50,
-          height: 56,
+          height: 64,
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          padding: "0 28px",
-          background: "rgba(13,15,20,0.85)",
-          borderBottom: "1px solid var(--line)",
-          backdropFilter: "blur(14px)",
-          WebkitBackdropFilter: "blur(14px)",
+          padding: "0 32px",
+          background: "rgba(10,11,16,0.82)",
+          borderBottom: "1px solid rgba(255,255,255,0.06)",
+          backdropFilter: "blur(20px)",
+          WebkitBackdropFilter: "blur(20px)",
+          boxShadow: "0 1px 0 0 rgba(255,255,255,0.04), 0 4px 24px rgba(0,0,0,0.3)",
         }}
       >
         {/* Brand */}
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div className="brand-mark">N</div>
-          <span style={{ fontWeight: 600, fontSize: 14 }}>NRL Adaptive</span>
+          <div
+            style={{
+              width: 34,
+              height: 34,
+              borderRadius: 10,
+              background: "linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 15,
+              fontWeight: 700,
+              color: "#fff",
+              boxShadow: "0 0 14px rgba(59,130,246,0.35)",
+              flexShrink: 0,
+            }}
+          >
+            N
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.1 }}>
+            <span style={{ fontWeight: 700, fontSize: 14, letterSpacing: "-0.01em" }}>NRL Adaptive</span>
+            <span style={{ fontSize: 10, color: "var(--text-3)", letterSpacing: "0.04em", textTransform: "uppercase" }}>Cybersecurity Learning</span>
+          </div>
         </div>
 
-        {/* Nav links + actions */}
+        {/* Center links in a pill container */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 2,
+            background: "rgba(255,255,255,0.04)",
+            border: "1px solid rgba(255,255,255,0.07)",
+            borderRadius: 999,
+            padding: "4px 6px",
+          }}
+        >
+          {[
+            { href: "#how-it-works", label: "How it works" },
+            { href: "#topics", label: "Topics" },
+            { href: "#features", label: "Features" },
+          ].map((link) => (
+            <a
+              key={link.href}
+              href={link.href}
+              style={{
+                color: "var(--text-2)",
+                fontSize: 13,
+                fontWeight: 500,
+                padding: "6px 14px",
+                display: "inline-flex",
+                alignItems: "center",
+                textDecoration: "none",
+                borderRadius: 999,
+                transition: "color 150ms, background 150ms",
+              }}
+              onMouseOver={(e) => {
+                const el = e.currentTarget as HTMLAnchorElement;
+                el.style.color = "var(--text)";
+                el.style.background = "rgba(255,255,255,0.07)";
+              }}
+              onMouseOut={(e) => {
+                const el = e.currentTarget as HTMLAnchorElement;
+                el.style.color = "var(--text-2)";
+                el.style.background = "transparent";
+              }}
+            >
+              {link.label}
+            </a>
+          ))}
+        </div>
+
+        {/* Auth actions */}
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <a
-            href="#how-it-works"
+          <Link
+            href="/login"
             style={{
               color: "var(--text-2)",
-              fontSize: 14,
-              padding: "0 12px",
-              height: 36,
-              display: "inline-flex",
-              alignItems: "center",
+              fontSize: 13,
+              fontWeight: 500,
+              padding: "7px 16px",
               textDecoration: "none",
               borderRadius: 8,
-              transition: "color 120ms",
-            }}
-            onMouseOver={(e) => ((e.currentTarget as HTMLAnchorElement).style.color = "var(--text)")}
-            onMouseOut={(e) => ((e.currentTarget as HTMLAnchorElement).style.color = "var(--text-2)")}
-          >
-            How it works
-          </a>
-          <a
-            href="#topics"
-            style={{
-              color: "var(--text-2)",
-              fontSize: 14,
-              padding: "0 12px",
-              height: 36,
+              border: "1px solid rgba(255,255,255,0.08)",
+              transition: "color 150ms, border-color 150ms, background 150ms",
               display: "inline-flex",
               alignItems: "center",
-              textDecoration: "none",
-              borderRadius: 8,
-              transition: "color 120ms",
             }}
-            onMouseOver={(e) => ((e.currentTarget as HTMLAnchorElement).style.color = "var(--text)")}
-            onMouseOut={(e) => ((e.currentTarget as HTMLAnchorElement).style.color = "var(--text-2)")}
+            onMouseOver={(e) => {
+              const el = e.currentTarget as HTMLAnchorElement;
+              el.style.color = "var(--text)";
+              el.style.borderColor = "rgba(255,255,255,0.18)";
+              el.style.background = "rgba(255,255,255,0.05)";
+            }}
+            onMouseOut={(e) => {
+              const el = e.currentTarget as HTMLAnchorElement;
+              el.style.color = "var(--text-2)";
+              el.style.borderColor = "rgba(255,255,255,0.08)";
+              el.style.background = "transparent";
+            }}
           >
-            Topics
-          </a>
-          <Link href="/login" className="btn btn-ghost" style={{ marginLeft: 4 }}>
             Sign in
           </Link>
-          <Link href="/register" className="btn btn-primary">
+          <Link
+            href="/register"
+            style={{
+              fontSize: 13,
+              fontWeight: 600,
+              padding: "7px 18px",
+              textDecoration: "none",
+              borderRadius: 8,
+              background: "linear-gradient(135deg, #3b82f6 0%, #6366f1 100%)",
+              color: "#fff",
+              boxShadow: "0 0 12px rgba(99,102,241,0.4), inset 0 1px 0 rgba(255,255,255,0.15)",
+              transition: "opacity 150ms, box-shadow 150ms",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+            }}
+            onMouseOver={(e) => {
+              const el = e.currentTarget as HTMLAnchorElement;
+              el.style.opacity = "0.9";
+              el.style.boxShadow = "0 0 20px rgba(99,102,241,0.55), inset 0 1px 0 rgba(255,255,255,0.15)";
+            }}
+            onMouseOut={(e) => {
+              const el = e.currentTarget as HTMLAnchorElement;
+              el.style.opacity = "1";
+              el.style.boxShadow = "0 0 12px rgba(99,102,241,0.4), inset 0 1px 0 rgba(255,255,255,0.15)";
+            }}
+          >
             Start free
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style={{ marginTop: 1 }}>
+              <path d="M2 6.5h9M7.5 3l3.5 3.5L7.5 10" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
           </Link>
         </div>
       </nav>
@@ -254,7 +341,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── Feature cards ──────────────────────────────── */}
-      <section style={{ padding: "96px 24px", maxWidth: 1080, margin: "0 auto" }}>
+      <section id="features" style={{ padding: "96px 24px", maxWidth: 1080, margin: "0 auto" }}>
         <div style={{ textAlign: "center", marginBottom: 52 }}>
           <h2 style={{ fontSize: 34, fontWeight: 600, letterSpacing: "-0.02em", margin: "0 0 12px" }}>
             Why NRL Adaptive?
