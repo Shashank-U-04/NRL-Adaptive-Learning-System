@@ -2,16 +2,16 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { learningApi } from "@/lib/api";
+import { learningApi, type QuizStats, type ServerModule } from "@/lib/api";
 import AppLayout from "@/components/AppLayout";
 import LessonViewer from "@/features/learning/components/LessonViewer";
 import LabPanel from "@/features/learning/components/LabPanel";
 import QuizEngine from "@/features/learning/components/QuizEngine";
-import type { Module, ModuleSummary, Lesson, Lab } from "@/features/learning/types";
+import type { Module, Lesson, Lab } from "@/features/learning/types";
 import {
   Loader2, AlertCircle, RefreshCcw, Trophy, CheckCircle2,
   Terminal, BookOpen, Grid3x3, Clock,
@@ -33,8 +33,8 @@ function topicColor(id: string): string {
   return TOPIC_COLORS[id] ?? "#3B82F6";
 }
 
-export default function LearningPage() {
-  const { isAuthenticated, isLoading: authLoading, user } = useAuth();
+function LearningPageInner() {
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
@@ -42,7 +42,8 @@ export default function LearningPage() {
 
   const [activeLesson, setActiveLesson] = useState<Lesson | null>(null);
   const [activeLab, setActiveLab] = useState<Lab | null>(null);
-  const [viewState, setViewState] = useState<ViewState>("roadmap");
+  type ViewOverride = "lesson" | "lab" | "quiz" | null;
+  const [viewOverride, setViewOverride] = useState<ViewOverride>(null);
   const [topicFilter, setTopicFilter] = useState<string>("all");
 
   // ── Queries ───────────────────────────────────────────
@@ -62,7 +63,6 @@ export default function LearningPage() {
     data: detailData,
     isLoading: detailLoading,
     error: detailError,
-    refetch: refetchDetail,
   } = useQuery({
     queryKey: ["learning-module", selectedTopic],
     queryFn: () => learningApi.getModuleDetail(selectedTopic!),
@@ -71,7 +71,6 @@ export default function LearningPage() {
 
   const {
     data: progressData,
-    refetch: refetchProgress,
   } = useQuery({
     queryKey: ["learning-progress", selectedTopic],
     queryFn: () => learningApi.getProgress(selectedTopic!),
@@ -81,7 +80,7 @@ export default function LearningPage() {
   // ── Mutations ──────────────────────────────────────────
 
   const updateProgressMutation = useMutation({
-    mutationFn: (data: { lesson_id?: string; lab_id?: string; quiz_score?: number; quiz_stats?: any }) =>
+    mutationFn: (data: { lesson_id?: string; lab_id?: string; quiz_score?: number; quiz_stats?: QuizStats }) =>
       learningApi.updateProgress({ topic_id: selectedTopic!, ...data }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["learning-progress", selectedTopic] });
@@ -92,13 +91,13 @@ export default function LearningPage() {
     if (!authLoading && !isAuthenticated) router.push("/login");
   }, [authLoading, isAuthenticated, router]);
 
-  useEffect(() => {
-    if (!selectedTopic) {
-      setViewState("roadmap");
-    } else if (detailData?.success) {
-      setViewState("module-detail");
-    }
-  }, [selectedTopic, detailData]);
+  // Derive view state from URL + data — user interactions can override via viewOverride
+  const viewState: ViewState = (() => {
+    if (viewOverride) return viewOverride;
+    if (!selectedTopic) return "roadmap";
+    if (detailData?.success) return "module-detail";
+    return "roadmap";
+  })();
 
   const openModule = (id: string) => {
     router.push(`/learning?topic=${encodeURIComponent(id)}`);
@@ -115,15 +114,15 @@ export default function LearningPage() {
       lesson_id: lessonId,
       quiz_stats: { time_spent_seconds: timeSpent },
     });
-    setViewState("module-detail");
+    setViewOverride(null);
   };
 
   const handleLabComplete = async (labId: string) => {
     await updateProgressMutation.mutateAsync({ lab_id: labId });
-    setViewState("module-detail");
+    setViewOverride(null);
   };
 
-  const handleQuizComplete = async (score: number, stats: any) => {
+  const handleQuizComplete = async (score: number, stats: QuizStats) => {
     await updateProgressMutation.mutateAsync({ quiz_score: score, quiz_stats: stats });
     handleBackToRoadmap();
   };
@@ -136,8 +135,8 @@ export default function LearningPage() {
 
   if (authLoading) return null;
 
-  const modules: ModuleSummary[] = modulesData?.data?.modules ?? [];
-  const activeModule: Module | undefined = detailData?.data?.module;
+  const modules: ServerModule[] = modulesData?.data?.modules ?? [];
+  const activeModule = detailData?.data?.module as Module | undefined;
   const progress = progressData ?? {
     completed_lessons: [],
     completed_labs: [],
@@ -147,12 +146,12 @@ export default function LearningPage() {
   const loading = modulesLoading || detailLoading;
   const hasError = !!(modulesError || detailError || (detailData && !detailData.success));
 
-  // Unique topic list for chips — use id as topic identifier since ModuleSummary has no topic field
-  const allTopics = Array.from(new Set(modules.map((m) => (m as any).topic ?? m.id)));
+  // Unique topic list for chips
+  const allTopics = Array.from(new Set(modules.map((m) => m.topic ?? m.id)));
   const visibleModules =
     topicFilter === "all"
       ? modules
-      : modules.filter((m) => ((m as any).topic ?? m.id) === topicFilter);
+      : modules.filter((m) => (m.topic ?? m.id) === topicFilter);
 
   return (
     <AppLayout>
@@ -217,11 +216,11 @@ export default function LearningPage() {
                 visibleModules.length > 0 ? (
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
                     {visibleModules.map((module) => {
-                      const color = topicColor((module as any).topic ?? module.id ?? "");
+                      const color = topicColor(module.topic ?? module.id ?? "");
                       const moduleProgress = module.progress ?? 0;
                       const difficulty = module.difficulty ?? "intermediate";
-                      const type = (module as any).type ?? "text";
-                      const estimatedTime = (module as any).estimated_minutes ?? (module as any).duration ?? 20;
+                      const type = module.type ?? "text";
+                      const estimatedTime = module.estimated_minutes ?? module.duration ?? 20;
 
                       const TypeIcon =
                         type === "lab" ? Terminal : type === "text" ? BookOpen : Grid3x3;
@@ -253,7 +252,7 @@ export default function LearningPage() {
                                 zIndex: 1,
                               }}
                             >
-                              {(module as any).topic ?? module.id}
+                              {module.topic ?? module.id}
                             </span>
                             {/* Icon */}
                             <div
@@ -335,9 +334,9 @@ export default function LearningPage() {
               module={activeModule}
               progress={progress}
               onBack={handleBackToRoadmap}
-              onStartLesson={(l) => { setActiveLesson(l); setViewState("lesson"); }}
-              onStartLab={(lab) => { setActiveLab(lab); setViewState("lab"); }}
-              onStartQuiz={() => setViewState("quiz")}
+              onStartLesson={(l) => { setActiveLesson(l); setViewOverride("lesson"); }}
+              onStartLab={(lab) => { setActiveLab(lab); setViewOverride("lab"); }}
+              onStartQuiz={() => setViewOverride("quiz")}
             />
           )}
 
@@ -345,7 +344,7 @@ export default function LearningPage() {
           {viewState === "lesson" && activeLesson && (
             <LessonViewer
               lesson={activeLesson}
-              onBack={() => setViewState("module-detail")}
+              onBack={() => setViewOverride(null)}
               onComplete={() => handleLessonComplete(activeLesson.id)}
             />
           )}
@@ -354,7 +353,7 @@ export default function LearningPage() {
           {viewState === "lab" && activeLab && (
             <LabPanel
               lab={activeLab}
-              onBack={() => setViewState("module-detail")}
+              onBack={() => setViewOverride(null)}
               onComplete={() => handleLabComplete(activeLab.id)}
             />
           )}
@@ -364,7 +363,7 @@ export default function LearningPage() {
             <QuizEngine
               questions={activeModule.quizPool}
               title={`${activeModule.title} - Final Quiz`}
-              onBack={() => setViewState("module-detail")}
+              onBack={() => setViewOverride(null)}
               onComplete={(score, stats) => handleQuizComplete(score, stats)}
             />
           )}
@@ -372,6 +371,14 @@ export default function LearningPage() {
         </div>
       </div>
     </AppLayout>
+  );
+}
+
+export default function LearningPage() {
+  return (
+    <Suspense>
+      <LearningPageInner />
+    </Suspense>
   );
 }
 
@@ -385,7 +392,7 @@ function ModuleView({
   onStartQuiz,
 }: {
   module: Module;
-  progress: any;
+  progress: { completed_lessons: string[]; completed_labs: string[]; quiz_scores: Array<{ score: number }>; is_completed: boolean } | null;
   onBack: () => void;
   onStartLesson: (l: Lesson) => void;
   onStartLab: (lab: Lab) => void;
@@ -546,7 +553,7 @@ function ModuleView({
             </h3>
             <p style={{ color: "var(--text-2)", fontSize: 13, maxWidth: 340, margin: 0 }}>
               {progress?.is_completed
-                ? `Your highest score: ${progress.quiz_scores.length > 0 ? Math.max(...progress.quiz_scores.map((s: any) => s.score)) : 0}%`
+                ? `Your highest score: ${progress.quiz_scores.length > 0 ? Math.max(...progress.quiz_scores.map((s) => s.score)) : 0}%`
                 : `Test your knowledge of ${module.title} through a randomised adaptive assessment.`}
             </p>
           </div>

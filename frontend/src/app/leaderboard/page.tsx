@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
@@ -35,12 +37,11 @@ export default function LeaderboardPage() {
 
   if (authLoading) return null;
 
-  // Normalise field names — API may return username or name, total_xp or xp, etc.
-  const entries = (leaderboard ?? []).map((e: any, i: number) => ({
-    rank: e.rank ?? e.id ?? i + 1,
-    name: e.username ?? e.name ?? "—",
-    xp: e.total_xp ?? e.xp ?? 0,
-    sessions: e.sessions_count ?? e.sessions_completed ?? e.sessions ?? 0,
+  const entries = (leaderboard ?? []).map((e, i) => ({
+    rank: e.rank ?? i + 1,
+    name: e.name ?? "—",
+    xp: e.total_xp ?? 0,
+    sessions: e.sessions_completed ?? 0,
     accuracy: e.accuracy ?? 0,
   }));
 
@@ -156,7 +157,7 @@ export default function LeaderboardPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {paginated.map((entry: any) => {
+                  {paginated.map((entry) => {
                     const isMe = entry.name === user?.name;
                     return (
                       <tr key={entry.rank} className={isMe ? "me" : ""}>

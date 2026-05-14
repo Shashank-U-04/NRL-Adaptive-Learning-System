@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { authApi } from "@/lib/api";
@@ -45,13 +47,12 @@ export default function ProfilePage() {
     if (!authLoading && !isAuthenticated) router.push("/login");
   }, [authLoading, isAuthenticated, router]);
 
-  useEffect(() => {
-    if (user) {
-      setEditName(user.name ?? "");
-      setEditEmail(user.email ?? "");
-    }
-    if (profile) setEditGoal(profile.daily_goal_minutes ?? 30);
-  }, [user, profile]);
+  const startEditing = () => {
+    setEditName(user?.name ?? "");
+    setEditEmail(user?.email ?? "");
+    setEditGoal(profile?.daily_goal_minutes ?? 30);
+    setEditing(true);
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -180,7 +181,7 @@ export default function ProfilePage() {
                     </button>
                   </>
                 ) : (
-                  <button className="btn btn-ghost" onClick={() => setEditing(true)}>
+                  <button className="btn btn-ghost" onClick={startEditing}>
                     <Edit3 style={{ width: 14, height: 14 }} /> Edit
                   </button>
                 )}

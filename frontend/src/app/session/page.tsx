@@ -2,13 +2,13 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { sessionApi, type QuestionPayload } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import AppLayout from "@/components/AppLayout";
 import {
-  Play, ChevronRight, Check, X, Sparkles, Flame, Zap,
+  Play, ChevronRight, Check, X, Sparkles, Flame,
   Globe, Shield, Lock, Layers, Bug, Database, Trophy, ArrowRight,
 } from "lucide-react";
 
@@ -37,7 +37,7 @@ const TOPICS = [
 const OPTION_LETTERS = ["A", "B", "C", "D"] as const;
 
 // ── Page ──────────────────────────────────────────────────
-export default function SessionPage() {
+function SessionPageInner() {
   const { isAuthenticated, isLoading: authLoading, refreshUser } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -53,12 +53,10 @@ export default function SessionPage() {
   const [aiExplanation, setAiExplanation] = useState("");
   const [streak, setStreak] = useState(0);
   const [reward, setReward] = useState(0);
-  const [totalReward, setTotalReward] = useState(0);
   const [stepCount, setStepCount] = useState(0);
   const [summary, setSummary] = useState<SessionSummaryData | null>(null);
   const [error, setError] = useState("");
   const [activeTopic, setActiveTopic] = useState("");
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [floatXP, setFloatXP] = useState(false);
   const timerRef = useRef(0);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -83,10 +81,8 @@ export default function SessionPage() {
         setAiExplanation(res.explanation || "");
         setActiveTopic(res.question.topic_name || "");
         setStepCount(0);
-        setTotalReward(0);
         setStreak(0);
         timerRef.current = 0;
-        setElapsedSeconds(0);
         setSessionState("active");
       }
     } finally {
@@ -99,7 +95,6 @@ export default function SessionPage() {
     if (sessionState === "active" || sessionState === "feedback") {
       intervalRef.current = setInterval(() => {
         timerRef.current += 1;
-        setElapsedSeconds(timerRef.current);
       }, 1000);
     }
     return () => {
@@ -118,10 +113,8 @@ export default function SessionPage() {
       setActiveTopic(res.question?.topic_name || "");
       setAiExplanation(res.explanation);
       setStepCount(0);
-      setTotalReward(0);
       setStreak(0);
       timerRef.current = 0;
-      setElapsedSeconds(0);
       setSessionState("active");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to start session");
@@ -146,7 +139,6 @@ export default function SessionPage() {
       setCorrectAnswer(res.correct_answer);
       setExplanation(res.explanation);
       setReward(res.reward);
-      setTotalReward((prev) => prev + res.reward);
       setStreak(res.streak);
       setAiExplanation(res.action_explanation);
       setStepCount((prev) => prev + 1);
@@ -204,9 +196,6 @@ export default function SessionPage() {
       /* ignore */
     }
   };
-
-  const formatTime = (s: number) =>
-    `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
 
   const isSessionLoading = sessionState === "loading";
 
@@ -564,5 +553,13 @@ export default function SessionPage() {
         </div>
       </div>
     </AppLayout>
+  );
+}
+
+export default function SessionPage() {
+  return (
+    <Suspense>
+      <SessionPageInner />
+    </Suspense>
   );
 }

@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
@@ -38,21 +40,20 @@ export default function AnalyticsPage() {
   if (authLoading) return null;
 
   // KPI calculations
-  const totalSessions = dashboard?.sessions_completed || accuracyData?.length || 0;
   const avgAccuracy = topicData && topicData.length > 0
-    ? Math.round(topicData.reduce((s: number, t: any) => s + (t.mastery_score ?? t.accuracy ?? 0), 0) / topicData.length)
+    ? Math.round(topicData.reduce((s, t) => s + (t.mastery_score ?? t.accuracy ?? 0), 0) / topicData.length)
     : (dashboard?.overall_accuracy ?? "--");
   const hardestTopic = topicData && topicData.length > 0
-    ? [...topicData].sort((a: any, b: any) => (a.mastery_score ?? 0) - (b.mastery_score ?? 0))[0]?.topic_name ?? "--"
+    ? [...topicData].sort((a, b) => (a.mastery_score ?? 0) - (b.mastery_score ?? 0))[0]?.topic_name ?? "--"
     : "--";
 
-  const lineData = (accuracyData ?? []).map((item: any) => ({
+  const lineData = (accuracyData ?? []).map((item) => ({
     d: item.session_number,
     acc: item.accuracy,
   }));
 
   const topicBarData = topicData
-    ? topicData.map((t: any) => ({
+    ? topicData.map((t) => ({
         topic: t.topic_name?.slice(0, 8) ?? "",
         mastery: t.mastery_score ?? 0,
         accuracy: t.accuracy ?? 0,
@@ -129,7 +130,7 @@ export default function AnalyticsPage() {
               <p className="section-h" style={{ marginBottom: 16 }}>Topic mastery</p>
               {topicData && topicData.length > 0 ? (
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                  {topicData.map((t: any) => {
+                  {topicData.map((t) => {
                     const score = Math.round(t.mastery_score ?? t.accuracy ?? 0);
                     const color = score >= 80 ? "var(--green)" : score >= 60 ? "var(--amber)" : "var(--red)";
                     const pbarClass = score >= 80 ? "pbar green" : score >= 60 ? "pbar amber" : "pbar";
@@ -169,7 +170,7 @@ export default function AnalyticsPage() {
                 />
               ) : topicData && topicData.length > 0 ? (
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  {topicData.map((t: any) => {
+                  {topicData.map((t) => {
                     const score = Math.round(t.mastery_score ?? t.accuracy ?? 0);
                     return (
                       <div key={t.topic_name}>
