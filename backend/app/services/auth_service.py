@@ -49,8 +49,6 @@ async def sync_user(
         id=supabase_sub,
         name=display_name,
         email=email,
-        # Supabase owns credentials — no local password hash needed.
-        password_hash="",
     )
     db.add(user)
     await db.flush()

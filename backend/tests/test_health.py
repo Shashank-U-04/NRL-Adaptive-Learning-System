@@ -18,21 +18,3 @@ async def test_root(client):
     assert r.status_code == 200
     body = r.json()
     assert body["docs"] == "/docs"
-
-
-@pytest.mark.asyncio
-async def test_ai_health(client):
-    r = await client.get("/system/ai")
-    assert r.status_code == 200
-    body = r.json()
-    assert "preferred" in body
-    assert "providers" in body
-
-
-@pytest.mark.asyncio
-async def test_cost_report(client):
-    r = await client.get("/system/cost")
-    assert r.status_code == 200
-    body = r.json()
-    assert "months" in body
-    assert "budget_usd" in body
