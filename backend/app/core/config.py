@@ -30,8 +30,8 @@ if DATABASE_URL.startswith("postgresql://") and "+asyncpg" not in DATABASE_URL:
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 
 # ── Supabase Auth ─────────────────────────────────────────
-SUPABASE_JWT_SECRET: str = os.getenv("SUPABASE_JWT_SECRET", "")
-SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
+SUPABASE_JWT_SECRET: str = os.getenv("SUPABASE_JWT_SECRET", "").strip()
+SUPABASE_URL: str = os.getenv("SUPABASE_URL", "").strip()
 
 if not SUPABASE_JWT_SECRET:
     raise ValueError(
