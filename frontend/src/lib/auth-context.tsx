@@ -30,6 +30,7 @@ interface AuthContextType {
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
+  loginWithGoogle: () => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
@@ -43,19 +44,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   const refreshUser = useCallback(async () => {
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (!sessionData.session) {
+      setUser(null);
+      setProfile(null);
+      return;
+    }
+
+    // Set basic user from Supabase session immediately so isAuthenticated = true
+    const sbUser = sessionData.session.user;
+    const fallbackUser: User = {
+      id: sbUser.id,
+      email: sbUser.email ?? "",
+      name:
+        sbUser.user_metadata?.full_name ||
+        sbUser.user_metadata?.name ||
+        sbUser.email?.split("@")[0] ||
+        "User",
+      role: "student",
+    };
+    setUser(fallbackUser);
+
+    // Enrich with backend profile (non-blocking — backend failure won't log user out)
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      if (!sessionData.session) {
-        setUser(null);
-        setProfile(null);
-        return;
-      }
       const data = await authApi.me();
       setUser(data.user);
       setProfile(data.profile ?? null);
-    } catch {
-      setUser(null);
-      setProfile(null);
+    } catch (err) {
+      console.warn("Backend /auth/me failed, using Supabase session data:", err);
+      // Keep the Supabase-derived user — don't set user to null
     }
   }, []);
 
@@ -67,7 +84,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         setIsLoading(false);
       }
-    });
+    }).catch(() => setIsLoading(false));
 
     // Subscribe to auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -85,17 +102,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [refreshUser]);
 
   const login = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data: authData, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw new Error(error.message);
-    await refreshUser();
+    if (!authData.session) throw new Error("Sign in succeeded but no session was returned.");
+
+    // Set user from Supabase session immediately
+    const sbUser = authData.session.user;
+    const fallbackUser: User = {
+      id: sbUser.id,
+      email: sbUser.email ?? email,
+      name:
+        sbUser.user_metadata?.full_name ||
+        sbUser.user_metadata?.name ||
+        email.split("@")[0],
+      role: "student",
+    };
+    setUser(fallbackUser);
+
+    // Try to get full profile from backend
+    try {
+      const meData = await authApi.me();
+      setUser(meData.user);
+      setProfile(meData.profile ?? null);
+    } catch (err) {
+      console.warn("Backend /auth/me failed after login, using Supabase session:", err);
+    }
   };
 
   const register = async (name: string, email: string, password: string) => {
-    const { error: signUpError } = await supabase.auth.signUp({ email, password });
-    if (signUpError) throw new Error(signUpError.message);
-    const { error: updateError } = await supabase.auth.updateUser({ data: { name } });
-    if (updateError) throw new Error(updateError.message);
-    await refreshUser();
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { full_name: name, name } },
+    });
+    if (error) throw new Error(error.message);
+    // Session exists only when email confirmation is disabled in Supabase.
+    // If confirmation is required, data.session is null and the user must
+    // verify their email before they can log in.
+    if (data.session) {
+      await refreshUser();
+    }
+  };
+
+  const loginWithGoogle = async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
+    });
+    if (error) throw new Error(error.message);
   };
 
   const logout = async () => {
@@ -112,6 +166,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isLoading,
         isAuthenticated: !!user,
         login,
+        loginWithGoogle,
         register,
         logout,
         refreshUser,
