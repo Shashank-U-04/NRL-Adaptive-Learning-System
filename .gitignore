@@ -77,6 +77,15 @@ desktop.ini
 *.log
 logs/
 
+# ── Test / Coverage ──────────────────────────────────
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.cover
+.hypothesis/
+
 # ── Tooling / Generated ─────────────────────────────
 AGENTS.md
 CLAUDE.md
