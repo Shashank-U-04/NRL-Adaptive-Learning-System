@@ -166,12 +166,21 @@ export interface ServerLesson {
   visuals?: string[];
 }
 
+export interface ServerLabValidationRule {
+  pattern: string;
+  flags?: string;
+  response: string;
+  isWin: boolean;
+}
+
 export interface ServerLab {
   id: string;
   title: string;
   description: string;
   instructions: string[];
   expectedOutcome: string;
+  validationRules?: ServerLabValidationRule[];
+  hints?: string[];
 }
 
 export interface ServerModule {

@@ -45,12 +45,21 @@ export interface Lesson {
   visuals?: string[]; // Diagram placeholders (e.g., "sql-injection-flow")
 }
 
+export interface LabValidationRule {
+  pattern: string; // serialized regex source
+  flags?: string;
+  response: string;
+  isWin: boolean;
+}
+
 export interface Lab {
   id: string;
   title: string;
   description: string;
   instructions: string[];
   expectedOutcome: string;
+  validationRules?: LabValidationRule[];
+  hints?: string[];
 }
 
 export interface Module {

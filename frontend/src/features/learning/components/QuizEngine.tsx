@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Question } from "../types";
 import GlassCard from "@/components/ui/GlassCard";
 import NeumorphicButton from "@/components/ui/NeumorphicButton";
+import { useAuth } from "@/lib/auth-context";
 import { Trophy, ArrowRight, CheckCircle2, XCircle, Timer, BarChart3, ChevronLeft } from "lucide-react";
 
 interface QuizEngineProps {
@@ -16,12 +17,29 @@ interface QuizEngineProps {
 }
 
 export default function QuizEngine({ questions, title, onComplete, onBack, userWeaknesses = [] }: QuizEngineProps) {
+  const { profile } = useAuth();
   const [currentIdx, setCurrentIdx] = useState(0);
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [answers, setAnswers] = useState<Record<string, { selected: string, isCorrect: boolean, timeTaken: number }>>({});
   const [showResult, setShowResult] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [startTime, setStartTime] = useState(() => Date.now());
+  const [quizStartTime] = useState(() => Date.now());
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  useEffect(() => {
+    if (showResult) return;
+    const interval = setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - quizStartTime) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [quizStartTime, showResult]);
+
+  const formattedElapsed = useMemo(() => {
+    const m = Math.floor(elapsedSeconds / 60).toString().padStart(2, "0");
+    const s = (elapsedSeconds % 60).toString().padStart(2, "0");
+    return `${m}:${s}`;
+  }, [elapsedSeconds]);
 
   // 🤖 PRE-RL ADAPTIVE LOGIC: Weighted Random Selection
   // If this is a 'Mixed' quiz, we prioritize questions from userWeaknesses
@@ -159,7 +177,7 @@ export default function QuizEngine({ questions, title, onComplete, onBack, userW
         <div className="flex items-center gap-6">
            <div className="flex items-center gap-2 text-slate-400">
              <Timer className="w-4 h-4" />
-             <span className="text-xs font-mono font-bold tracking-widest">04:59</span>
+             <span className="text-xs font-mono font-bold tracking-widest">{formattedElapsed}</span>
            </div>
            <div className="flex items-center gap-2">
              <span className="text-xs font-bold text-slate-500">Q{currentIdx + 1}/{questions.length}</span>
@@ -255,10 +273,12 @@ export default function QuizEngine({ questions, title, onComplete, onBack, userW
            <BarChart3 className="w-4 h-4" />
            <span className="text-[10px] font-bold uppercase tracking-widest">Adaptive Engine Active</span>
         </div>
-        <div className="flex items-center gap-2">
-           <Trophy className="w-4 h-4" />
-           <span className="text-[10px] font-bold uppercase tracking-widest">Mastery Level: 1.0</span>
-        </div>
+        {profile?.knowledge_level && (
+          <div className="flex items-center gap-2">
+             <Trophy className="w-4 h-4" />
+             <span className="text-[10px] font-bold uppercase tracking-widest">Mastery Level: {profile.knowledge_level}</span>
+          </div>
+        )}
       </div>
     </div>
   );

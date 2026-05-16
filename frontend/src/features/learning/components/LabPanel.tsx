@@ -21,15 +21,19 @@ export default function LabPanel({ lab, onComplete, onBack }: LabPanelProps) {
   const [showHint, setShowHint] = useState(false);
   const [hintIndex, setHintIndex] = useState(0);
 
-  // 🤖 ENHANCED LAB VALIDATION: Pattern-based payload checking
+  // Pattern-based validation: lab-provided rules, or generic fallback (any non-empty answer wins)
   const validationRules = useMemo(() => {
+    if (lab.validationRules && lab.validationRules.length > 0) {
+      return lab.validationRules.map((r) => ({
+        pattern: new RegExp(r.pattern, r.flags ?? "i"),
+        response: r.response,
+        isWin: r.isWin,
+      }));
+    }
     return [
-      { pattern: /' OR 1=1 --/i, response: "Authentication bypassed! Admin access granted.", isWin: true },
-      { pattern: /' OR '1'='1/i, response: "Authentication bypassed! User session initialized.", isWin: true },
-      { pattern: /admin' --/i, response: "SQL Syntax error near 'admin' --. Try adding a condition.", isWin: false },
-      { pattern: /<script>/i, response: "XSS payload detected but this is a SQL injection lab. Try SQL payloads.", isWin: false },
+      { pattern: /\S+/, response: "Submission accepted.", isWin: true },
     ];
-  }, []);
+  }, [lab.validationRules]);
 
   const runSimulation = () => {
     if (!input.trim()) return;
@@ -49,17 +53,15 @@ export default function LabPanel({ lab, onComplete, onBack }: LabPanelProps) {
           setIsSuccess(true);
         }
       } else {
-        setOutput(prev => [...prev, "[ERROR] No vulnerability triggered.", "[SIM] Target remained stable. Try a different SQLi technique."]);
+        setOutput(prev => [...prev, "[ERROR] Submission did not match expected pattern.", "[SIM] Review the lab instructions and try a different approach."]);
         setIsSuccess(false);
       }
     }, 1200);
   };
 
-  const hints = [
-    "Think about how SQL queries are structured. Can you force a 'true' condition?",
-    "Try using the OR operator with a always-true statement like 1=1.",
-    "Don't forget to comment out the rest of the original query using '--'."
-  ];
+  const hints = lab.hints && lab.hints.length > 0
+    ? lab.hints
+    : ["Read the lab description and instructions carefully."];
 
   const getNextHint = () => {
     setShowHint(true);

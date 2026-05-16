@@ -2,9 +2,11 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useMemo, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { motion } from "framer-motion";
 import { useAuth } from "@/lib/auth-context";
+import { useToast } from "@/lib/toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { learningApi, type QuizStats, type ServerModule, type ServerLesson, type ServerLab, type ServerQuestion } from "@/lib/api";
 import AppLayout from "@/components/AppLayout";
@@ -14,25 +16,29 @@ import QuizEngine from "@/features/learning/components/QuizEngine";
 import type { Difficulty, Module, Lesson, Lab, Question } from "@/features/learning/types";
 import {
   Loader2, AlertCircle, RefreshCcw, Trophy, CheckCircle2,
-  Terminal, BookOpen, Grid3x3, Clock,
+  Terminal, BookOpen, Clock, ChevronRight, Sparkles, Layers,
 } from "lucide-react";
 
 type ViewState = "roadmap" | "module-detail" | "lesson" | "lab" | "quiz";
+type DifficultyFilter = "all" | "beginner" | "intermediate" | "advanced";
 
-// ── Topic colours ────────────────────────────────────────
-const TOPIC_COLORS: Record<string, string> = {
-  "network-security": "#3B82F6",
-  "web-security": "#10B981",
-  "cryptography": "#8B5CF6",
-  "malware-analysis": "#EF4444",
-  "forensics": "#F59E0B",
-  "social-engineering": "#F43F5E",
-  "osint": "#14B8A6",
-};
-function topicColor(id: string): string {
-  return TOPIC_COLORS[id] ?? "#3B82F6";
+// ── Per-topic theming (hash → palette) ────────────────────
+const THEME_PALETTE = [
+  { from: "#3B82F6", to: "#6aa6ff", label: "accent" },
+  { from: "#8B5CF6", to: "#a78bfa", label: "violet" },
+  { from: "#14B8A6", to: "#5eead4", label: "teal" },
+  { from: "#F59E0B", to: "#fbbf24", label: "amber" },
+  { from: "#10B981", to: "#34d399", label: "green" },
+  { from: "#F43F5E", to: "#fb7185", label: "rose" },
+] as const;
+
+function themeForTitle(title: string) {
+  let hash = 0;
+  for (let i = 0; i < title.length; i++) hash = (hash * 31 + title.charCodeAt(i)) >>> 0;
+  return THEME_PALETTE[hash % THEME_PALETTE.length];
 }
 
+// ── Mapping ───────────────────────────────────────────────
 function serverToModule(s: ServerModule): Module {
   return {
     id: s.id,
@@ -61,6 +67,8 @@ function serverToModule(s: ServerModule): Module {
       description: lab.description,
       instructions: lab.instructions,
       expectedOutcome: lab.expectedOutcome,
+      validationRules: lab.validationRules,
+      hints: lab.hints,
     })),
     quizPool: (s.quizPool ?? []).map((q: ServerQuestion): Question => ({
       id: q.id,
@@ -75,21 +83,33 @@ function serverToModule(s: ServerModule): Module {
   };
 }
 
+// ── Stagger variants ──────────────────────────────────────
+const gridVariants = {
+  hidden: { opacity: 0 },
+  visible: { opacity: 1, transition: { staggerChildren: 0.05, delayChildren: 0.05 } },
+};
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 14 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.35, ease: [0.22, 1, 0.36, 1] as [number, number, number, number] } },
+};
+
+// ── Page ──────────────────────────────────────────────────
 function LearningPageInner() {
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
+  const toast = useToast();
   const selectedTopic = searchParams.get("topic");
 
   const [activeLesson, setActiveLesson] = useState<Lesson | null>(null);
   const [activeLab, setActiveLab] = useState<Lab | null>(null);
   type ViewOverride = "lesson" | "lab" | "quiz" | null;
   const [viewOverride, setViewOverride] = useState<ViewOverride>(null);
-  const [topicFilter, setTopicFilter] = useState<string>("all");
+  const [difficultyFilter, setDifficultyFilter] = useState<DifficultyFilter>("all");
 
   // ── Queries ───────────────────────────────────────────
-
   const {
     data: modulesData,
     isLoading: modulesLoading,
@@ -111,21 +131,21 @@ function LearningPageInner() {
     enabled: isAuthenticated && !!selectedTopic,
   });
 
-  const {
-    data: progressData,
-  } = useQuery({
+  const { data: progressData } = useQuery({
     queryKey: ["learning-progress", selectedTopic],
     queryFn: () => learningApi.getProgress(selectedTopic!),
     enabled: isAuthenticated && !!selectedTopic,
   });
 
   // ── Mutations ──────────────────────────────────────────
-
   const updateProgressMutation = useMutation({
     mutationFn: (data: { lesson_id?: string; lab_id?: string; quiz_score?: number; quiz_stats?: QuizStats }) =>
       learningApi.updateProgress({ topic_id: selectedTopic!, ...data }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["learning-progress", selectedTopic] });
+    },
+    onError: (err: unknown) => {
+      toast.error(err instanceof Error ? err.message : "Failed to update progress");
     },
   });
 
@@ -133,7 +153,7 @@ function LearningPageInner() {
     if (!authLoading && !isAuthenticated) router.push("/login");
   }, [authLoading, isAuthenticated, router]);
 
-  // Derive view state from URL + data — user interactions can override via viewOverride
+  // Derive view state
   const viewState: ViewState = (() => {
     if (viewOverride) return viewOverride;
     if (!selectedTopic) return "roadmap";
@@ -175,9 +195,14 @@ function LearningPageInner() {
     }
   }, [viewState, activeLesson]);
 
-  if (authLoading) return null;
+  // Surface fetch errors via toast (don't render static error blocks for transient issues)
+  useEffect(() => {
+    if (detailError) {
+      toast.error(detailError instanceof Error ? detailError.message : "Failed to load module");
+    }
+  }, [detailError, toast]);
 
-  const modules: ServerModule[] = modulesData?.data?.modules ?? [];
+  const modules: ServerModule[] = useMemo(() => modulesData?.data?.modules ?? [], [modulesData]);
   const activeModule = detailData?.data?.module ? serverToModule(detailData.data.module) : undefined;
   const progress = progressData ?? {
     completed_lessons: [],
@@ -186,49 +211,62 @@ function LearningPageInner() {
     is_completed: false,
   };
   const loading = modulesLoading || detailLoading;
-  const hasError = !!(modulesError || detailError || (detailData && !detailData.success));
+  const hasError = !!(modulesError || (detailData && !detailData.success));
 
-  // Unique topic list for chips
-  const allTopics = Array.from(new Set(modules.map((m) => m.topic_id ?? m.id)));
-  const visibleModules =
-    topicFilter === "all"
-      ? modules
-      : modules.filter((m) => (m.topic_id ?? m.id) === topicFilter);
+  // Map difficulty values to filter buckets
+  const normalizeDifficulty = (d?: string): DifficultyFilter => {
+    if (!d) return "intermediate";
+    const lower = d.toLowerCase();
+    if (lower === "easy" || lower === "beginner") return "beginner";
+    if (lower === "hard" || lower === "advanced") return "advanced";
+    return "intermediate";
+  };
+
+  const visibleModules = useMemo(() => {
+    if (difficultyFilter === "all") return modules;
+    return modules.filter((m) => normalizeDifficulty(m.difficulty) === difficultyFilter);
+  }, [modules, difficultyFilter]);
+
+  if (authLoading) return null;
 
   return (
     <AppLayout>
-      <div className="scroll-y" style={{ height: "100%" }}>
-        <div style={{ maxWidth: 1280, margin: "0 auto", padding: "32px 32px 40px" }}>
+      <div className="scroll-y" style={{ height: "100%", position: "relative" }}>
+        <div style={{ maxWidth: 1280, margin: "0 auto", padding: "32px 32px 60px" }}>
 
           {/* ── Roadmap view ─────────────────────────── */}
           {viewState === "roadmap" && (
             <>
               {/* Header */}
-              <div style={{ marginBottom: 24 }}>
-                <h1 className="page-h1">Learning modules</h1>
+              <motion.div
+                initial={{ opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.35 }}
+                style={{ marginBottom: 22 }}
+              >
+                <h1 className="page-h1">Learning library</h1>
                 <p className="page-sub">
-                  Master cybersecurity through structured modules, interactive lessons, and hands-on labs.
+                  Structured modules with lessons, hands-on labs, and adaptive quizzes.
                 </p>
-              </div>
+              </motion.div>
 
-              {/* Topic chips */}
-              {modules.length > 0 && (
-                <div className="scroll-x" style={{ display: "flex", gap: 8, paddingBottom: 8, marginBottom: 16 }}>
-                  <button
-                    className={`chip${topicFilter === "all" ? " active" : ""}`}
-                    onClick={() => setTopicFilter("all")}
-                  >
-                    All
-                  </button>
-                  {allTopics.map((t) => (
-                    <button
-                      key={t}
-                      className={`chip${topicFilter === t ? " active" : ""}`}
-                      onClick={() => setTopicFilter(t)}
-                    >
-                      {t}
-                    </button>
-                  ))}
+              {/* Filter row */}
+              {!loading && modules.length > 0 && (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
+                  <div className="tabs">
+                    {(["all", "beginner", "intermediate", "advanced"] as const).map((d) => (
+                      <button
+                        key={d}
+                        className={`tab${difficultyFilter === d ? " active" : ""}`}
+                        onClick={() => setDifficultyFilter(d)}
+                      >
+                        {d === "all" ? "All" : d === "beginner" ? "Easy" : d === "intermediate" ? "Medium" : "Hard"}
+                      </button>
+                    ))}
+                  </div>
+                  <span style={{ fontSize: 12, color: "var(--text-3)" }}>
+                    {visibleModules.length} {visibleModules.length === 1 ? "module" : "modules"}
+                  </span>
                 </div>
               )}
 
@@ -236,7 +274,7 @@ function LearningPageInner() {
               {loading && (
                 <div style={{ minHeight: 320, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12 }}>
                   <Loader2 style={{ width: 32, height: 32, color: "var(--accent)", animation: "spin 0.7s linear infinite" }} />
-                  <p style={{ color: "var(--text-3)", fontSize: 13 }}>Initializing learning environment…</p>
+                  <p style={{ color: "var(--text-3)", fontSize: 13 }}>Loading modules…</p>
                 </div>
               )}
 
@@ -248,124 +286,182 @@ function LearningPageInner() {
                   </div>
                   <p style={{ color: "var(--text-2)", fontSize: 14 }}>Failed to load learning data. Please try again.</p>
                   <button className="btn btn-ghost" onClick={() => refetchModules()}>
-                    <RefreshCcw style={{ width: 14, height: 14 }} /> Try Again
+                    <RefreshCcw style={{ width: 14, height: 14 }} /> Try again
                   </button>
                 </div>
               )}
 
+              {/* Empty (no modules at all) */}
+              {!loading && !hasError && modules.length === 0 && (
+                <div style={{ display: "grid", placeItems: "center", minHeight: 360 }}>
+                  <div className="glass" style={{ padding: "40px 36px", textAlign: "center", maxWidth: 420 }}>
+                    <div
+                      style={{
+                        width: 60, height: 60, borderRadius: 16,
+                        background: "var(--accent-soft)", border: "1px solid var(--accent-line)",
+                        display: "grid", placeItems: "center", margin: "0 auto 16px",
+                        color: "var(--accent)",
+                      }}
+                    >
+                      <BookOpen size={26} />
+                    </div>
+                    <h3 style={{ fontSize: 17, fontWeight: 600, margin: "0 0 6px" }}>No modules available yet</h3>
+                    <p style={{ fontSize: 13, color: "var(--text-2)", margin: 0, lineHeight: 1.5 }}>
+                      Curated learning content is being prepared. Check back soon.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Empty (filter narrowed) */}
+              {!loading && !hasError && modules.length > 0 && visibleModules.length === 0 && (
+                <div style={{ display: "grid", placeItems: "center", minHeight: 240 }}>
+                  <div className="glass" style={{ padding: "32px 28px", textAlign: "center", maxWidth: 380 }}>
+                    <Layers size={22} style={{ color: "var(--text-3)", marginBottom: 10 }} />
+                    <h3 style={{ fontSize: 15, fontWeight: 600, margin: "0 0 4px" }}>No modules match this filter</h3>
+                    <p style={{ fontSize: 13, color: "var(--text-2)", margin: "0 0 14px" }}>
+                      Try a different difficulty level.
+                    </p>
+                    <button className="btn btn-ghost" onClick={() => setDifficultyFilter("all")}>
+                      Show all modules
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Module grid */}
-              {!loading && !hasError && (
-                visibleModules.length > 0 ? (
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
-                    {visibleModules.map((module) => {
-                      const color = topicColor(module.topic_id ?? module.id ?? "");
-                      const moduleProgress = module.progress ?? 0;
-                      const difficulty = module.difficulty ?? "intermediate";
-                      const type = module.type ?? "text";
-                      const estimatedTime = module.estimated_minutes ?? module.duration ?? 20;
+              {!loading && !hasError && visibleModules.length > 0 && (
+                <motion.div
+                  variants={gridVariants}
+                  initial="hidden"
+                  animate="visible"
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+                    gap: 16,
+                  }}
+                >
+                  {visibleModules.map((module) => {
+                    const theme = themeForTitle(module.title || module.id);
+                    const moduleProgress = Math.min(100, Math.max(0, module.progress ?? 0));
+                    const difficulty = normalizeDifficulty(module.difficulty);
+                    const difficultyLabel = difficulty === "beginner" ? "Easy" : difficulty === "advanced" ? "Hard" : "Medium";
+                    const estimatedTime = module.estimated_minutes ?? module.duration ?? 20;
 
-                      const TypeIcon =
-                        type === "lab" ? Terminal : type === "text" ? BookOpen : Grid3x3;
+                    const pillClass =
+                      difficulty === "beginner" ? "pill pill-easy" :
+                      difficulty === "advanced" ? "pill pill-hard" :
+                      "pill pill-medium";
 
-                      return (
-                        <div key={module.id} className="glass glass-hover" style={{ padding: 14, display: "flex", flexDirection: "column", gap: 0, cursor: "default" }}>
-                          {/* Thumbnail */}
+                    return (
+                      <motion.button
+                        key={module.id}
+                        variants={itemVariants}
+                        whileHover={{ y: -4 }}
+                        whileTap={{ scale: 0.99 }}
+                        onClick={() => openModule(module.id)}
+                        className="glass glass-hover"
+                        style={{
+                          padding: 0,
+                          display: "flex",
+                          flexDirection: "column",
+                          textAlign: "left",
+                          cursor: "pointer",
+                          overflow: "hidden",
+                          minHeight: 280,
+                          border: "1px solid var(--line)",
+                        }}
+                      >
+                        {/* Thumbnail */}
+                        <div
+                          className="mod-thumb"
+                          style={{
+                            background: `linear-gradient(135deg, ${theme.from} 0%, ${theme.to} 100%)`,
+                            margin: 0,
+                            borderRadius: 0,
+                            borderTopLeftRadius: 14,
+                            borderTopRightRadius: 14,
+                            height: 110,
+                          }}
+                        >
+                          {/* Subtle pattern */}
                           <div
-                            className="mod-thumb"
                             style={{
-                              background: `linear-gradient(135deg, ${color}28, ${color}08)`,
-                              marginBottom: 12,
-                              position: "relative",
+                              position: "absolute", inset: 0,
+                              backgroundImage: `radial-gradient(circle, rgba(255,255,255,0.18) 1px, transparent 1px)`,
+                              backgroundSize: "16px 16px",
+                              opacity: 0.5,
+                            }}
+                          />
+                          <div
+                            style={{
+                              width: 52, height: 52, borderRadius: 14,
+                              background: "rgba(255,255,255,0.22)",
+                              backdropFilter: "blur(8px)",
+                              border: "1px solid rgba(255,255,255,0.35)",
+                              display: "grid", placeItems: "center",
+                              position: "relative", zIndex: 1,
                             }}
                           >
-                            {/* Topic label */}
-                            <span
-                              style={{
-                                position: "absolute",
-                                top: 8,
-                                left: 8,
-                                fontSize: 10,
-                                color: color,
-                                background: `${color}22`,
-                                padding: "2px 8px",
-                                borderRadius: 999,
-                                border: `1px solid ${color}44`,
-                                fontWeight: 500,
-                                zIndex: 1,
-                              }}
-                            >
-                              {module.topic_id ?? module.id}
-                            </span>
-                            {/* Icon */}
-                            <div
-                              style={{
-                                width: 44,
-                                height: 44,
-                                borderRadius: 10,
-                                background: `${color}22`,
-                                display: "grid",
-                                placeItems: "center",
-                                position: "relative",
-                                zIndex: 1,
-                              }}
-                            >
-                              <TypeIcon style={{ width: 20, height: 20, color }} />
-                            </div>
+                            <Sparkles size={22} style={{ color: "#fff" }} />
                           </div>
+                        </div>
 
-                          {/* Pills row */}
-                          <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
-                            <span className="pill pill-neutral">{type}</span>
-                            <span
-                              className={`pill ${
-                                difficulty === "beginner"
-                                  ? "pill-easy"
-                                  : difficulty === "advanced"
-                                  ? "pill-hard"
-                                  : "pill-medium"
-                              }`}
-                            >
-                              {difficulty}
-                            </span>
-                          </div>
-
+                        {/* Body */}
+                        <div style={{ padding: "16px 18px", display: "flex", flexDirection: "column", flex: 1, gap: 10 }}>
                           {/* Title */}
-                          <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 8, lineHeight: 1.4 }}>
+                          <div style={{ fontSize: 15, fontWeight: 600, lineHeight: 1.35, letterSpacing: "-0.01em" }}>
                             {module.title}
                           </div>
 
-                          {/* Time */}
-                          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-3)", marginBottom: 10 }}>
-                            <Clock style={{ width: 12, height: 12 }} />
-                            {estimatedTime} min
-                          </div>
-
-                          {/* Progress bar */}
-                          {moduleProgress > 0 && (
-                            <div style={{ marginBottom: 10 }}>
-                              <div className="pbar green">
-                                <span style={{ width: `${moduleProgress}%` }} />
-                              </div>
-                            </div>
+                          {/* Description — truncated to 2 lines */}
+                          {module.description && (
+                            <p
+                              style={{
+                                fontSize: 12.5,
+                                color: "var(--text-2)",
+                                margin: 0,
+                                lineHeight: 1.5,
+                                display: "-webkit-box",
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: "vertical",
+                                overflow: "hidden",
+                              }}
+                            >
+                              {module.description}
+                            </p>
                           )}
 
-                          {/* CTA button */}
-                          <button
-                            className={`btn ${moduleProgress >= 100 ? "btn-ghost" : moduleProgress > 0 ? "btn-primary" : "btn-ghost"}`}
-                            style={{ width: "100%", marginTop: "auto" }}
-                            onClick={() => openModule(module.id)}
-                          >
-                            {moduleProgress >= 100 ? "Review" : moduleProgress > 0 ? "Continue" : "Start"}
-                          </button>
+                          {/* Meta row */}
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 2 }}>
+                            <span className={pillClass}>{difficultyLabel}</span>
+                            <span className="pill pill-neutral" style={{ gap: 4 }}>
+                              <Clock size={11} /> {estimatedTime} min
+                            </span>
+                          </div>
+
+                          {/* Spacer */}
+                          <div style={{ flex: 1 }} />
+
+                          {/* Progress */}
+                          <div>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                              <span style={{ fontSize: 11, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600 }}>
+                                Progress
+                              </span>
+                              <span style={{ fontSize: 11, color: moduleProgress > 0 ? "var(--accent)" : "var(--text-3)", fontWeight: 600 }}>
+                                {moduleProgress}%
+                              </span>
+                            </div>
+                            <div className={`pbar${moduleProgress >= 100 ? " green" : ""}`}>
+                              <span style={{ width: `${moduleProgress}%` }} />
+                            </div>
+                          </div>
                         </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div style={{ padding: "60px 0", textAlign: "center", color: "var(--text-3)", fontSize: 13 }}>
-                    No learning modules available yet. Check back soon!
-                  </div>
-                )
+                      </motion.button>
+                    );
+                  })}
+                </motion.div>
               )}
             </>
           )}
@@ -404,7 +500,7 @@ function LearningPageInner() {
           {viewState === "quiz" && activeModule && (
             <QuizEngine
               questions={activeModule.quizPool}
-              title={`${activeModule.title} - Final Quiz`}
+              title={`${activeModule.title} — Final quiz`}
               onBack={() => setViewOverride(null)}
               onComplete={(score, stats) => handleQuizComplete(score, stats)}
             />
@@ -424,7 +520,7 @@ export default function LearningPage() {
   );
 }
 
-// ── Internal Module View ─────────────────────────────────
+// ── Internal Module Detail View ──────────────────────────
 function ModuleView({
   module,
   progress,
@@ -447,21 +543,21 @@ function ModuleView({
   return (
     <div>
       {/* Back + header */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 16, marginBottom: 24 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 18, marginBottom: 26 }}>
         <button
           className="btn btn-ghost"
           style={{ alignSelf: "flex-start", height: 32, padding: "0 12px", fontSize: 12 }}
           onClick={onBack}
         >
-          ← Back to Roadmap
+          ← Back to library
         </button>
-        <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16 }}>
-          <div>
+        <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 20, flexWrap: "wrap" }}>
+          <div style={{ flex: "1 1 360px", minWidth: 0 }}>
             <h1 className="page-h1" style={{ marginBottom: 6 }}>{module.title}</h1>
-            <p className="page-sub">{module.description}</p>
+            <p className="page-sub" style={{ marginTop: 0 }}>{module.description}</p>
           </div>
           {/* Progress summary */}
-          <div className="glass" style={{ padding: "12px 20px", display: "flex", gap: 20, flexShrink: 0 }}>
+          <div className="glass" style={{ padding: "14px 22px", display: "flex", gap: 24, flexShrink: 0 }}>
             <div style={{ textAlign: "center" }}>
               <div style={{ fontSize: 10, color: "var(--text-3)", textTransform: "uppercase", fontWeight: 600, marginBottom: 2 }}>Lessons</div>
               <div style={{ fontSize: 18, fontWeight: 600, color: "var(--accent)" }}>{completedLessons.length}/{module.lessons.length}</div>
@@ -473,7 +569,7 @@ function ModuleView({
             <div style={{ textAlign: "center" }}>
               <div style={{ fontSize: 10, color: "var(--text-3)", textTransform: "uppercase", fontWeight: 600, marginBottom: 2 }}>Status</div>
               <div style={{ fontSize: 14, fontWeight: 600, color: progress?.is_completed ? "var(--green)" : "var(--amber)" }}>
-                {progress?.is_completed ? "MASTERED" : "ACTIVE"}
+                {progress?.is_completed ? "Mastered" : "Active"}
               </div>
             </div>
           </div>
@@ -481,7 +577,7 @@ function ModuleView({
       </div>
 
       {/* Tabs */}
-      <div className="tabs" style={{ marginBottom: 20 }}>
+      <div className="tabs" style={{ marginBottom: 22 }}>
         {(["lessons", "labs", "quiz"] as const).map((t) => (
           <button key={t} className={`tab${activeTab === t ? " active" : ""}`} onClick={() => setActiveTab(t)}>
             {t.charAt(0).toUpperCase() + t.slice(1)}
@@ -516,7 +612,7 @@ function ModuleView({
                       height: 34,
                       borderRadius: 999,
                       border: `1px solid ${isDone ? "rgba(16,185,129,0.35)" : "var(--line)"}`,
-                      background: isDone ? "rgba(16,185,129,0.15)" : "rgba(255,255,255,0.03)",
+                      background: isDone ? "rgba(16,185,129,0.15)" : "rgba(0,0,0,0.03)",
                       display: "grid",
                       placeItems: "center",
                       fontSize: 12,
@@ -531,9 +627,12 @@ function ModuleView({
                     {lesson.title}
                   </span>
                 </div>
-                <span style={{ fontSize: 11, color: "var(--text-3)" }}>
-                  {lesson.checkpoints.length} checkpoints
-                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontSize: 11, color: "var(--text-3)" }}>
+                    {lesson.checkpoints.length} checkpoints
+                  </span>
+                  <ChevronRight size={14} style={{ color: "var(--text-3)" }} />
+                </div>
               </div>
             );
           })}
@@ -550,22 +649,22 @@ function ModuleView({
                 key={lab.id}
                 className="glass"
                 style={{
-                  padding: 20,
+                  padding: 22,
                   background: isDone ? "rgba(16,185,129,0.05)" : undefined,
                   borderColor: isDone ? "rgba(16,185,129,0.2)" : undefined,
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-                  <h3 style={{ fontSize: 16, fontWeight: 500, margin: 0 }}>{lab.title}</h3>
+                  <h3 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>{lab.title}</h3>
                   {isDone && <CheckCircle2 style={{ width: 16, height: 16, color: "var(--green)" }} />}
                 </div>
-                <p style={{ color: "var(--text-2)", fontSize: 13, marginBottom: 14, margin: "0 0 14px" }}>{lab.description}</p>
+                <p style={{ color: "var(--text-2)", fontSize: 13, margin: "0 0 14px", lineHeight: 1.55 }}>{lab.description}</p>
                 <button
                   className={`btn ${isDone ? "btn-ghost" : "btn-primary"}`}
                   onClick={() => onStartLab(lab)}
                 >
                   <Terminal style={{ width: 14, height: 14 }} />
-                  {isDone ? "Redo Simulation" : "Initialize Simulation"}
+                  {isDone ? "Redo lab" : "Start lab"}
                 </button>
               </div>
             );
@@ -591,16 +690,16 @@ function ModuleView({
           </div>
           <div>
             <h3 style={{ fontSize: 20, fontWeight: 600, margin: "0 0 6px" }}>
-              {progress?.is_completed ? "Module Mastered!" : "Final Module Assessment"}
+              {progress?.is_completed ? "Module mastered" : "Final module assessment"}
             </h3>
-            <p style={{ color: "var(--text-2)", fontSize: 13, maxWidth: 340, margin: 0 }}>
+            <p style={{ color: "var(--text-2)", fontSize: 13, maxWidth: 360, margin: 0, lineHeight: 1.5 }}>
               {progress?.is_completed
                 ? `Your highest score: ${progress.quiz_scores.length > 0 ? Math.max(...progress.quiz_scores.map((s) => s.score)) : 0}%`
-                : `Test your knowledge of ${module.title} through a randomised adaptive assessment.`}
+                : `Test your knowledge of ${module.title} through an adaptive assessment.`}
             </p>
           </div>
           <button className="btn btn-primary btn-lg" onClick={onStartQuiz}>
-            {progress?.is_completed ? "Retake Quiz" : "Start Quiz"}
+            {progress?.is_completed ? "Retake quiz" : "Start quiz"}
           </button>
         </div>
       )}
