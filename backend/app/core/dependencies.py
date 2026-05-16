@@ -27,18 +27,46 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token", auto_error=False)
 def _candidate_keys(secret: str) -> list[str | bytes]:
     """Return every plausible HS256 key derived from the configured secret.
 
-    Supabase exposes the JWT secret as a string in the dashboard. Depending on
-    project age, the displayed value may be the raw signing key OR a base64
-    representation of the raw signing key. We try both so the same backend code
-    works for any Supabase project the user has configured.
+    Supabase has two key formats in circulation:
+
+    Old format (pre-2025):
+      The JWT secret displayed in the dashboard is a base64-encoded string
+      (typically ending in ==). We try both the raw string and the decoded bytes.
+
+    New format (sb_secret_ prefix, 2025+):
+      Supabase's new key management system prefixes secret keys with
+      'sb_secret_'. The signing material is the URL-safe base64 payload
+      after the prefix. We try:
+        1. The full string as-is.
+        2. The payload (after the prefix) as-is.
+        3. The payload URL-safe base64-decoded to raw bytes.
+        4. Standard base64 fallbacks for any remaining format.
     """
     keys: list[str | bytes] = [secret]
+
+    if secret.startswith("sb_secret_"):
+        payload = secret[len("sb_secret_"):]
+        # Try the raw payload string
+        if payload not in keys:
+            keys.append(payload)
+        # Try URL-safe base64 decode of the payload
+        try:
+            # Add padding if needed (base64url strings may omit trailing =)
+            padding = (4 - len(payload) % 4) % 4
+            decoded = base64.urlsafe_b64decode(payload + "=" * padding)
+            if decoded and decoded not in [k if isinstance(k, bytes) else k.encode() for k in keys]:
+                keys.append(decoded)
+        except (ValueError, Exception):
+            pass
+
+    # Standard base64 decode — handles old Supabase secrets ending in ==
     try:
         decoded = base64.b64decode(secret, validate=True)
         if decoded and decoded != secret.encode():
             keys.append(decoded)
     except (ValueError, base64.binascii.Error):
         pass
+
     return keys
 
 
@@ -72,6 +100,7 @@ async def get_current_user(
 
     payload: dict | None = None
     last_error: Exception | None = None
+
     for key in _JWT_KEYS:
         try:
             payload = jwt.decode(
