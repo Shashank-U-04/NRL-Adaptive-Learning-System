@@ -5,13 +5,15 @@ export const dynamic = "force-dynamic";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
+import { motion } from "framer-motion";
 import { analyticsApi } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import { useToast } from "@/lib/toast";
 import AppLayout from "@/components/AppLayout";
-import { Sparkline, LineChart, RadarChart } from "@/components/Charts";
+import { LineChart, RadarChart } from "@/components/Charts";
 import {
   Play, Zap, Flame, Target, BookOpen,
-  TrendingUp, TrendingDown, Sparkles,
+  TrendingUp, TrendingDown, Sparkles, Activity,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -26,48 +28,56 @@ function DifficultyBadge({ level }: { level: string }) {
   return <span className={cls}>{level}</span>;
 }
 
-interface StatCardProps {
+interface KpiCardProps {
   icon: React.ElementType;
   label: string;
   value: string | number;
   color: string;
-  sparkData: number[];
-  trend?: number | null;
+  tint: string;
+  glow?: boolean;
+  index: number;
 }
 
-function StatCard({ icon: Icon, label, value, color, sparkData, trend = null }: StatCardProps) {
-  const isPositive = trend !== null && trend >= 0;
+function KpiCard({ icon: Icon, label, value, color, tint, glow = false, index }: KpiCardProps) {
   return (
-    <div className="glass glass-hover stat-card" style={{ cursor: "default" }}>
-      <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
-        <div className="stat-icon" style={{ background: `${color}22`, color, flexShrink: 0 }}>
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35, delay: index * 0.06, ease: [0.4, 0, 0.2, 1] }}
+      className="kpi-card"
+    >
+      <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+        <div
+          style={{
+            width: 40, height: 40, borderRadius: 12,
+            display: "grid", placeItems: "center",
+            background: tint, color, flexShrink: 0,
+            boxShadow: glow ? `0 0 18px ${tint}` : "none",
+          }}
+        >
           <Icon size={18} />
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>
+          <div
+            style={{
+              fontSize: 11, fontWeight: 600, color: "var(--text-3)",
+              textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4,
+            }}
+          >
             {label}
           </div>
-          <div style={{ fontSize: 28, fontWeight: 600, lineHeight: 1.1, letterSpacing: "-0.02em" }}>
+          <div
+            className={glow ? "streak-fire" : undefined}
+            style={{
+              fontSize: 28, fontWeight: 600, lineHeight: 1.1,
+              letterSpacing: "-0.02em", color: "var(--text)",
+            }}
+          >
             {value}
           </div>
-          {trend !== null && (
-            <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 4 }}>
-              {isPositive
-                ? <TrendingUp size={12} style={{ color: "var(--green)" }} />
-                : <TrendingDown size={12} style={{ color: "var(--red)" }} />
-              }
-              <span style={{ fontSize: 11, color: isPositive ? "var(--green)" : "var(--red)", fontWeight: 500 }}>
-                {isPositive ? "+" : ""}{trend}
-              </span>
-              <span style={{ fontSize: 11, color: "var(--text-3)" }}>vs last week</span>
-            </div>
-          )}
         </div>
       </div>
-      <div style={{ marginTop: 12 }}>
-        <Sparkline data={sparkData} color={color} height={32} />
-      </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -75,28 +85,35 @@ function StatCard({ icon: Icon, label, value, color, sparkData, trend = null }: 
 export default function DashboardPage() {
   const { isAuthenticated, isLoading: authLoading, user } = useAuth();
   const router = useRouter();
+  const toast = useToast();
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) router.push("/login");
   }, [authLoading, isAuthenticated, router]);
 
-  const { data: dashboard, isLoading } = useQuery({
+  const { data: dashboard, isLoading, error: dashboardError } = useQuery({
     queryKey: ["dashboard"],
     queryFn: analyticsApi.dashboard,
     enabled: isAuthenticated,
   });
 
-  const { data: accuracyData } = useQuery({
+  const { data: accuracyData, error: accuracyError } = useQuery({
     queryKey: ["accuracy-trend"],
     queryFn: () => analyticsApi.accuracyTrend(30),
     enabled: isAuthenticated,
   });
 
-  const { data: topicData } = useQuery({
+  const { data: topicData, error: topicError } = useQuery({
     queryKey: ["topic-mastery"],
     queryFn: analyticsApi.topicMastery,
     enabled: isAuthenticated,
   });
+
+  useEffect(() => {
+    if (dashboardError) toast.error("Failed to load dashboard");
+    if (accuracyError) toast.error("Failed to load accuracy trend");
+    if (topicError) toast.error("Failed to load topic mastery");
+  }, [dashboardError, accuracyError, topicError, toast]);
 
   if (authLoading || isLoading) {
     return (
@@ -110,36 +127,38 @@ export default function DashboardPage() {
   const firstName = (user?.name || "there").split(" ")[0];
   const streak = dashboard?.current_streak || 0;
 
-  const chartAccuracyData = accuracyData && accuracyData.length > 0
-    ? accuracyData.map((item) => ({ d: item.session_number, acc: item.accuracy }))
-    : [
-        { d: 1, acc: 52 }, { d: 2, acc: 58 }, { d: 3, acc: 55 },
-        { d: 4, acc: 63 }, { d: 5, acc: 70 }, { d: 6, acc: 74 },
-        { d: 7, acc: 80 },
-      ];
+  const chartAccuracyData = (accuracyData ?? []).map((item) => ({
+    d: item.session_number,
+    acc: item.accuracy,
+  }));
 
-  const radarData = topicData && topicData.length > 0
-    ? topicData.map((t) => ({ topic: t.topic_name, mastery: t.mastery_score }))
-    : [
-        { topic: "Networking", mastery: 72 },
-        { topic: "Web Sec", mastery: 58 },
-        { topic: "Crypto", mastery: 45 },
-        { topic: "Sys Sec", mastery: 64 },
-        { topic: "Hacking", mastery: 35 },
-        { topic: "Forensics", mastery: 50 },
-      ];
+  const radarData = (topicData ?? []).map((t) => ({
+    topic: t.topic_name,
+    mastery: t.mastery_score,
+  }));
+
+  // Compute trend over last 7 sessions
+  const last7 = (accuracyData ?? []).slice(-7);
+  const trendDelta = last7.length >= 2
+    ? Math.round(last7[last7.length - 1].accuracy - last7[0].accuracy)
+    : null;
 
   const weakestTopic =
     dashboard?.weak_topics?.[0]?.topic ||
     (radarData.length > 0
       ? radarData.reduce((a, b) => (a.mastery < b.mastery ? a : b)).topic
-      : "Cryptography");
+      : null);
+
+  const trackHref = weakestTopic
+    ? `/session?topic=${encodeURIComponent(weakestTopic)}`
+    : "/session";
 
   // ── Render ───────────────────────────────────────────
   return (
     <AppLayout>
-      <div className="scroll-y" style={{ height: "100%" }}>
-        <div style={{ maxWidth: 1280, margin: "0 auto", padding: "32px 32px 40px" }}>
+      <div className="scroll-y" style={{ height: "100%", position: "relative" }}>
+        <div className="aurora" aria-hidden style={{ position: "absolute", inset: 0, zIndex: 0 }} />
+        <div style={{ maxWidth: 1280, margin: "0 auto", padding: "32px 32px 40px", position: "relative", zIndex: 1 }}>
 
           {/* Header */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 28 }}>
@@ -147,7 +166,7 @@ export default function DashboardPage() {
               <h1 className="page-h1">Welcome back, {firstName}</h1>
               <p className="page-sub">
                 {streak > 0
-                  ? `${streak}-day streak — keep it up!`
+                  ? `${streak}-day streak — keep it up.`
                   : "Start a session to build your streak."}
               </p>
             </div>
@@ -157,108 +176,175 @@ export default function DashboardPage() {
             </Link>
           </div>
 
-          {/* Stats grid — 4 columns */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 12 }}>
-            <StatCard
+          {/* KPI grid */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14, marginBottom: 18 }}>
+            <KpiCard
+              index={0}
               icon={Zap}
               label="Total XP"
               color="#3B82F6"
+              tint="rgba(59,130,246,0.12)"
               value={dashboard?.total_xp ?? 0}
-              sparkData={accuracyData ? accuracyData.map((d) => d.reward) : []}
             />
-            <StatCard
+            <KpiCard
+              index={1}
               icon={Flame}
               label="Current Streak"
               color="#F59E0B"
-              value={`${streak} days`}
-              sparkData={accuracyData ? accuracyData.slice(-8).map((_, i) => i + 1) : []}
+              tint="rgba(245,158,11,0.15)"
+              glow={streak > 0}
+              value={`${streak} ${streak === 1 ? "day" : "days"}`}
             />
-            <StatCard
+            <KpiCard
+              index={2}
               icon={Target}
               label="Avg Accuracy"
               color="#10B981"
+              tint="rgba(16,185,129,0.12)"
               value={`${dashboard?.overall_accuracy ?? 0}%`}
-              sparkData={accuracyData ? accuracyData.map((d) => d.accuracy) : []}
             />
-            <StatCard
+            <KpiCard
+              index={3}
               icon={BookOpen}
               label="Sessions"
               color="#8B5CF6"
+              tint="rgba(139,92,246,0.14)"
               value={dashboard?.sessions_completed ?? 0}
-              sparkData={accuracyData ? accuracyData.map((d) => d.session_number) : []}
             />
           </div>
 
           {/* Charts row */}
-          <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 12, marginBottom: 12 }}>
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-40px" }}
+            transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
+            style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 14, marginBottom: 14 }}
+          >
             {/* Accuracy trend */}
-            <div className="glass" style={{ padding: 20 }}>
+            <div className="glass" style={{ padding: 22 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
-                <div>
-                  <h2 className="section-h">Accuracy trend</h2>
-                  <p style={{ fontSize: 13, color: "var(--text-2)", margin: "2px 0 0" }}>Last 7 sessions</p>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <Activity size={16} style={{ color: "var(--accent)" }} />
+                  <div>
+                    <h2 className="section-h">Accuracy trend</h2>
+                    <p style={{ fontSize: 12, color: "var(--text-3)", margin: "2px 0 0" }}>
+                      Last {Math.min(7, last7.length) || 0} sessions
+                    </p>
+                  </div>
                 </div>
-                <span className="pill pill-blue" style={{ marginLeft: "auto" }}>+17 pts</span>
+                {trendDelta !== null && (
+                  <span
+                    className={`pill ${trendDelta >= 0 ? "pill-blue" : "pill-hard"}`}
+                    style={{ marginLeft: "auto", gap: 4 }}
+                  >
+                    {trendDelta >= 0
+                      ? <TrendingUp size={11} />
+                      : <TrendingDown size={11} />
+                    }
+                    {trendDelta >= 0 ? `+${trendDelta} pts` : `${trendDelta} pts`}
+                  </span>
+                )}
               </div>
-              <LineChart
-                data={chartAccuracyData}
-                xKey="d"
-                yKey="acc"
-                color="#3B82F6"
-                height={220}
-                yMin={40}
-                yMax={100}
-              />
+              {chartAccuracyData.length > 0 ? (
+                <LineChart
+                  data={chartAccuracyData}
+                  xKey="d"
+                  yKey="acc"
+                  color="#3B82F6"
+                  height={220}
+                  yMin={40}
+                  yMax={100}
+                />
+              ) : (
+                <div style={{
+                  height: 220, display: "flex", alignItems: "center", justifyContent: "center",
+                  color: "var(--text-3)", fontSize: 13, textAlign: "center", padding: "0 20px",
+                }}>
+                  No sessions yet — start one to see your trend
+                </div>
+              )}
             </div>
 
             {/* Topic mastery radar */}
-            <div className="glass" style={{ padding: 20 }}>
-              <h2 className="section-h" style={{ marginBottom: 16 }}>Topic mastery</h2>
-              <RadarChart
-                data={radarData}
-                valueKey="mastery"
-                labelKey="topic"
-                size={240}
-                color="#3B82F6"
-              />
+            <div className="glass" style={{ padding: 22 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+                <Target size={16} style={{ color: "var(--violet)" }} />
+                <h2 className="section-h">Topic mastery</h2>
+              </div>
+              {radarData.length > 0 ? (
+                <RadarChart
+                  data={radarData}
+                  valueKey="mastery"
+                  labelKey="topic"
+                  size={240}
+                  color="#3B82F6"
+                />
+              ) : (
+                <div style={{
+                  height: 240, display: "flex", alignItems: "center", justifyContent: "center",
+                  color: "var(--text-3)", fontSize: 13, textAlign: "center", padding: "0 20px",
+                }}>
+                  Practice topics to build mastery
+                </div>
+              )}
             </div>
-          </div>
+          </motion.div>
 
           {/* AI recommendation banner */}
-          <div
-            className="glass"
-            style={{
-              padding: 18,
-              marginBottom: 12,
-              display: "flex",
-              gap: 14,
-              alignItems: "center",
-              borderLeft: "3px solid var(--accent)",
-            }}
-          >
-            <div
-              className="stat-icon"
-              style={{ background: "var(--accent-soft)", color: "var(--accent)", flexShrink: 0 }}
+          {weakestTopic && (
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.35 }}
+              className="cyber-border"
+              style={{
+                padding: 18,
+                marginBottom: 14,
+                display: "flex",
+                gap: 14,
+                alignItems: "center",
+              }}
             >
-              <Sparkles size={18} />
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 500, fontSize: 14 }}>
-                The AI engine recommends focusing on <strong>{weakestTopic}</strong> next.
+              <div
+                style={{
+                  width: 40, height: 40, borderRadius: 12, flexShrink: 0,
+                  display: "grid", placeItems: "center",
+                  background: "var(--accent-soft)", color: "var(--accent)",
+                  animation: "pulse-glow 3s ease-in-out infinite",
+                }}
+              >
+                <Sparkles size={18} />
               </div>
-              <div style={{ fontSize: 12, color: "var(--text-2)", marginTop: 2 }}>
-                Personalized path based on your recent performance.
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 500, fontSize: 14, color: "var(--text)" }}>
+                  The AI engine recommends focusing on <strong>{weakestTopic}</strong> next.
+                </div>
+                <div style={{ fontSize: 12, color: "var(--text-2)", marginTop: 2 }}>
+                  Personalized path based on your recent performance.
+                </div>
               </div>
-            </div>
-            <Link href="/session" className="btn btn-ghost" style={{ height: 36, whiteSpace: "nowrap" }}>
-              Start track →
-            </Link>
-          </div>
+              <Link href={trackHref} className="btn btn-primary" style={{ height: 36, whiteSpace: "nowrap" }}>
+                Start track →
+              </Link>
+            </motion.div>
+          )}
 
           {/* Recent sessions table */}
-          <div className="glass" style={{ padding: 0, overflow: "hidden" }}>
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.35 }}
+            className="glass"
+            style={{ padding: 0, overflow: "hidden" }}
+          >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "18px 20px 12px" }}>
-              <h2 className="section-h">Recent sessions</h2>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span className="live-dot" />
+                <h2 className="section-h">Recent sessions</h2>
+              </div>
               <Link href="/analytics" className="btn btn-ghost" style={{ height: 30, fontSize: 12 }}>
                 View all
               </Link>
@@ -269,29 +355,30 @@ export default function DashboardPage() {
                 <thead>
                   <tr>
                     <th>Date</th>
-                    <th>Topic</th>
                     <th>Score</th>
                     <th>Difficulty</th>
-                    <th>XP</th>
+                    <th style={{ textAlign: "right" }}>XP</th>
                   </tr>
                 </thead>
                 <tbody>
                   {dashboard.recent_sessions.map((s) => (
                     <tr key={s.id}>
                       <td>{new Date(s.date).toLocaleDateString()}</td>
-                      <td style={{ color: "var(--text-2)" }}>—</td>
                       <td>
                         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                          <span style={{ minWidth: 36 }}>{s.accuracy}%</span>
-                          <div className="pbar" style={{ width: 80 }}>
-                            <span style={{ width: `${s.accuracy}%` }} />
+                          <span style={{ minWidth: 36, fontVariantNumeric: "tabular-nums" }}>{s.accuracy}%</span>
+                          <div
+                            className={s.accuracy >= 80 ? "pbar green" : s.accuracy >= 50 ? "pbar amber" : "pbar"}
+                            style={{ width: 90, height: 5 }}
+                          >
+                            <span style={{ width: `${Math.max(0, Math.min(100, s.accuracy))}%` }} />
                           </div>
                         </div>
                       </td>
                       <td>
                         <DifficultyBadge level={s.accuracy >= 80 ? "Easy" : s.accuracy >= 50 ? "Medium" : "Hard"} />
                       </td>
-                      <td style={{ color: "var(--amber)", fontWeight: 600 }}>
+                      <td style={{ color: "var(--amber)", fontWeight: 600, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
                         +{Math.round(s.reward * 10)}
                       </td>
                     </tr>
@@ -299,11 +386,11 @@ export default function DashboardPage() {
                 </tbody>
               </table>
             ) : (
-              <div style={{ padding: "24px 20px", color: "var(--text-3)", fontSize: 14 }}>
+              <div style={{ padding: "32px 20px", color: "var(--text-3)", fontSize: 14, textAlign: "center" }}>
                 No sessions yet. Start your first one!
               </div>
             )}
-          </div>
+          </motion.div>
 
         </div>
       </div>
