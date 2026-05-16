@@ -4,6 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
+import { learningApi } from "@/lib/api";
 import {
   LayoutDashboard, Play, BarChart2, Trophy, BookOpen, User, LogOut,
 } from "lucide-react";
@@ -13,7 +15,7 @@ const NAV = [
   { href: "/session",   label: "Start Session", icon: Play,             section: "Main" },
   { href: "/analytics", label: "Analytics",     icon: BarChart2,        section: "Insights" },
   { href: "/leaderboard", label: "Leaderboard", icon: Trophy,           section: "Insights" },
-  { href: "/learning",  label: "Learning",      icon: BookOpen,         section: "Library", badge: "9" },
+  { href: "/learning",  label: "Learning",      icon: BookOpen,         section: "Library" },
   { href: "/profile",   label: "Profile",       icon: User,             section: "Library" },
 ];
 
@@ -25,8 +27,21 @@ function initials(name: string) {
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const { user, logout } = useAuth();
+  const { user, logout, isAuthenticated } = useAuth();
   const router = useRouter();
+
+  const { data: modulesResp, isSuccess: modulesLoaded } = useQuery({
+    queryKey: ["sidebar-modules-count"],
+    queryFn: learningApi.getModules,
+    enabled: isAuthenticated,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+
+  const learningBadge =
+    modulesLoaded && modulesResp?.success && modulesResp.data?.modules
+      ? String(modulesResp.data.modules.length)
+      : null;
 
   const handleLogout = () => {
     logout();
@@ -51,6 +66,7 @@ export default function Sidebar() {
           <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
             {NAV.filter(n => n.section === section).map(item => {
               const active = pathname === item.href || pathname.startsWith(item.href + "/");
+              const badge = item.href === "/learning" ? learningBadge : null;
               return (
                 <Link
                   key={item.href}
@@ -59,8 +75,8 @@ export default function Sidebar() {
                 >
                   <item.icon size={16} />
                   <span>{item.label}</span>
-                  {item.badge && (
-                    <span className="badge-num">{item.badge}</span>
+                  {badge && (
+                    <span className="badge-num">{badge}</span>
                   )}
                 </Link>
               );

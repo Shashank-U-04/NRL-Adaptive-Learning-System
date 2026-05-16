@@ -107,12 +107,12 @@ export function LineChart({ data, xKey, yKey, color = "#3B82F6", height = 220, y
           return (
             <g key={i}>
               <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="rgba(0,0,0,0.07)" strokeDasharray="3 4" />
-              <text x={padL - 6} y={y + 3} textAnchor="end" fill="rgba(0,0,0,0.45)" fontSize="10">{yFormat(Math.round(v))}</text>
+              <text x={padL - 6} y={y + 3} textAnchor="end" fill="var(--text-3)" fontSize="10">{yFormat(Math.round(v))}</text>
             </g>
           );
         })}
         {data.map((d, i) => (
-          <text key={i} x={pts[i].x} y={H - 6} textAnchor="middle" fill="rgba(0,0,0,0.45)" fontSize="10">{String(d[xKey])}</text>
+          <text key={i} x={pts[i].x} y={H - 6} textAnchor="middle" fill="var(--text-3)" fontSize="10">{String(d[xKey])}</text>
         ))}
         {pts.length >= 2 && (
           <path d={`${smoothPath(pts)} L ${pts[pts.length-1].x},${H - padB} L ${pts[0].x},${H - padB} Z`} fill={`url(#lg-${id})`} />
@@ -182,7 +182,7 @@ export function RadarChart({ data, valueKey, labelKey, max = 100, color = "#3B82
       {data.map((d, i) => {
         const a = angle(i);
         const lr = r + 16;
-        return <text key={i} x={cx + Math.cos(a) * lr} y={cy + Math.sin(a) * lr + 3} textAnchor="middle" fill="rgba(0,0,0,0.6)" fontSize="10">{String(d[labelKey])}</text>;
+        return <text key={i} x={cx + Math.cos(a) * lr} y={cy + Math.sin(a) * lr + 3} textAnchor="middle" fill="var(--text-2)" fontSize="10">{String(d[labelKey])}</text>;
       })}
     </svg>
   );
@@ -213,7 +213,7 @@ export function StackedBar({ data, keys, colors, xKey, height = 220 }: {
           return (
             <g key={i}>
               <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="rgba(0,0,0,0.07)" />
-              <text x={padL - 4} y={y + 3} textAnchor="end" fill="rgba(0,0,0,0.45)" fontSize="10">{Math.round(max * f)}</text>
+              <text x={padL - 4} y={y + 3} textAnchor="end" fill="var(--text-3)" fontSize="10">{Math.round(max * f)}</text>
             </g>
           );
         })}
@@ -231,7 +231,7 @@ export function StackedBar({ data, keys, colors, xKey, height = 220 }: {
                   <rect key={k} x={cx - bw / 2} y={y} width={bw} height={Math.max(0, h - 1)} fill={colors[ki]} rx={ki === keys.length - 1 ? 3 : 0} opacity={hover != null && hover !== i ? 0.4 : 1} />
                 );
               })}
-              <text x={cx} y={H - 6} textAnchor="middle" fill="rgba(0,0,0,0.45)" fontSize="10">{String(d[xKey])}</text>
+              <text x={cx} y={H - 6} textAnchor="middle" fill="var(--text-3)" fontSize="10">{String(d[xKey])}</text>
             </g>
           );
         })}
