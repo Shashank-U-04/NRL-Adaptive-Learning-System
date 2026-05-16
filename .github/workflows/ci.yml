@@ -35,11 +35,11 @@ jobs:
       - name: Run pytest
         working-directory: backend
         env:
-          DATABASE_URL: sqlite+aiosqlite:///:memory:
+          DATABASE_URL: "sqlite+aiosqlite:///:memory:"
           RATE_LIMIT_ENABLED: "false"
           METRICS_ENABLED: "false"
-          AI_PROVIDER: none
-          SECRET_KEY: ci-test-secret-key-32-characters-long-padding
+          AI_PROVIDER: "none"
+          SECRET_KEY: "ci-test-secret-key-32-characters-long-padding"
         run: pytest -v --tb=short
 
   frontend-build:
