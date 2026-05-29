@@ -12,6 +12,7 @@ Uses the rich 7-feature state vector aligned with the production RL architecture
 import json
 import logging
 import random
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -48,10 +49,32 @@ CYBER_DATA_ROOT = ROOT_DIR / "backend" / "app" / "data" / "cybersecurity"
 DEFAULT_DATASET  = "web-security"
 
 
+def _topic_has_json_dataset(topic_slug: str) -> bool:
+    """Return True if at least one level{1,2,3}.json file exists for the topic."""
+    topic_dir = CYBER_DATA_ROOT / topic_slug
+    if not topic_dir.is_dir():
+        return False
+    return any((topic_dir / fname).is_file() for fname in LEVEL_FILES.values())
+
+
+_SLUG_COLLAPSE_RE = re.compile(r"-+")
+
+
 def _normalize_topic(topic: str | None) -> str:
+    """Canonicalize a topic identifier into a filesystem-safe slug.
+
+    Examples:
+        "Web Security"  -> "web-security"
+        "web_security"  -> "web-security"
+        "  Web  "       -> "web"
+        None            -> DEFAULT_DATASET
+    """
     if not topic:
         return DEFAULT_DATASET
-    return topic.strip().lower().replace("_", "-")
+    slug = topic.strip().lower()
+    slug = re.sub(r"[\s_]+", "-", slug)
+    slug = _SLUG_COLLAPSE_RE.sub("-", slug).strip("-")
+    return slug or DEFAULT_DATASET
 
 
 def _load_random_question(topic: str, difficulty: str) -> dict | None:
@@ -70,10 +93,20 @@ def _load_random_question(topic: str, difficulty: str) -> dict | None:
     return q
 
 
-def _find_question_by_id(question_id: str) -> dict | None:
-    """Scan all level files to find a question by ID."""
+def _find_question_by_id(question_id: str, topic: str | None = None) -> dict | None:
+    """Scan a topic's level files for a question by ID.
+
+    Behaviour:
+      * When ``topic`` is provided, search **only** that topic. No cross-topic
+        fallback — a non-web topic must never silently resolve a web-security
+        question (which previously let ``correct_answer`` default to the
+        learner's input and counted every answer as "correct").
+      * When ``topic`` is ``None``, search only ``DEFAULT_DATASET`` for legacy
+        callers that don't yet pass a topic.
+    """
+    topic_slug = topic if topic else DEFAULT_DATASET
     for level_file in LEVEL_FILES.values():
-        path = CYBER_DATA_ROOT / DEFAULT_DATASET / level_file
+        path = CYBER_DATA_ROOT / topic_slug / level_file
         if not path.exists():
             continue
         with path.open("r", encoding="utf-8") as f:
@@ -108,33 +141,72 @@ class SessionService:
 
     # ── Public methods ────────────────────────────────────
 
-    async def _ensure_topic_exists(self, topic_id: str) -> str:
-        """Verify topic exists in DB or create it from default/slug."""
-        result = await self.db.execute(select(Topic).where(Topic.id == topic_id))
-        topic = result.scalar_one_or_none()
+    async def _validate_topic(self, topic_id: str) -> str:
+        """Validate that ``topic_id`` is a *content-backed* quiz topic.
 
-        if topic:
-            return topic.id
+        Acceptance rules (any one):
+          1. A JSON dataset directory exists at
+             ``backend/app/data/cybersecurity/<slug>/`` with at least one
+             ``levelN.json`` file.
+          2. At least one ``Question`` row exists with this ``topic_id``.
 
-        # Auto-create if missing
-        new_topic = Topic(
-            id=topic_id,
-            title=topic_id.replace("-", " ").title(),
+        Having a matching ``Topic`` row alone is NOT sufficient — topics
+        can exist purely for learning/progress without any questions, and
+        a quiz session against an empty topic would never serve a question.
+
+        For JSON-backed topics we lazily register the ``Topic`` row so the
+        session's ``topic_id`` FK resolves. Arbitrary slugs (typos, junk)
+        are rejected with HTTP 400 and create no DB rows.
+        """
+        json_backed = _topic_has_json_dataset(topic_id)
+
+        has_db_questions = False
+        if not json_backed:
+            count_result = await self.db.execute(
+                select(Question.id).where(Question.topic_id == topic_id).limit(1)
+            )
+            has_db_questions = count_result.scalar_one_or_none() is not None
+
+        if not json_backed and not has_db_questions:
+            logger.warning(
+                "Rejected topic with no quiz content: %s (json=False, db_questions=False)",
+                topic_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Topic '{topic_id}' has no quiz content available. "
+                    "Choose a seeded topic with questions or one with a local JSON dataset."
+                ),
+            )
+
+        result = await self.db.execute(
+            select(Topic).where(Topic.id == topic_id)
         )
-        self.db.add(new_topic)
-        await self.db.flush()  # Use flush to get ID without full commit yet if nested
-        logger.info(f"[SESSION] Topic auto-created: {topic_id}")
-        print(f"[SESSION] Topic ensured: {topic_id}")
-        return new_topic.id
+        topic = result.scalar_one_or_none()
+        if topic is None:
+            topic = Topic(
+                id=topic_id,
+                title=topic_id.replace("-", " ").title(),
+                description=f"Auto-registered for content-backed topic '{topic_id}'.",
+                is_active=True,
+            )
+            self.db.add(topic)
+            await self.db.flush()
+            logger.info("Registered Topic row for content-backed topic: %s", topic_id)
+        elif not topic.is_active:
+            topic.is_active = True
+            await self.db.flush()
+        return topic.id
 
     async def start_session(
         self, user: User, topic: str | None = None
     ) -> StartSessionResponse:
         topic_slug = _normalize_topic(topic)
-        
-        # Ensure topic exists before session creation
-        await self._ensure_topic_exists(topic_slug)
-        
+
+        # Validate the topic — rejects unknown/junk slugs with HTTP 400.
+        await self._validate_topic(topic_slug)
+
         state = self.rl.initial_state()
 
         # Create DB session row
@@ -151,8 +223,12 @@ class SessionService:
         action_name, confidence, explanation = self.rl.recommend_action(state)
         difficulty = DIFFICULTY_MAP.get(action_name, "medium")
 
-        # Cache live state
-        _cache_set(session.id, {**state, "_topic": topic_slug})
+        # Cache live state. Underscored keys are cache-only metadata and are
+        # stripped out before the state vector is encoded for the DQN.
+        _cache_set(
+            session.id,
+            {**state, "_topic": topic_slug, "_consecutive_correct": 0},
+        )
 
         question = await self._fetch_question(difficulty, topic_slug)
 
@@ -167,7 +243,10 @@ class SessionService:
             explanation=explanation,
         )
         self.db.add(event)
-        await self.db.commit()
+        # get_db() owns the transaction boundary; flush sends SQL now so
+        # the session row's generated id is visible to the caller without
+        # committing partially-completed state.
+        await self.db.flush()
 
         return StartSessionResponse(
             session_id=session.id,
@@ -187,38 +266,92 @@ class SessionService:
         time_taken: int,
     ) -> AnswerResponse:
         session = await self._get_active_session(session_id, user.id)
-        state = _cache_get(session_id) or self.rl.initial_state()
-        topic_slug = state.pop("_topic", DEFAULT_DATASET)
 
-        # ── Resolve question ──────────────────────────────
-        json_q = _find_question_by_id(question_id)
-        is_correct = False
-        correct_answer = selected_answer
-        q_explanation: str | None = None
-        answered_difficulty = "medium"
+        # Authoritative topic is whatever was persisted on the session row at
+        # /start time — NOT a cached metadata field that can fall back to
+        # web-security on cache miss/restart/multi-worker.
+        topic_slug = session.topic_id or DEFAULT_DATASET
 
-        if json_q:
-            correct_answer = json_q.get("correct_answer", selected_answer)
-            q_explanation = json_q.get("explanation")
-            answered_difficulty = json_q.get("difficulty", "medium").lower()
-            is_correct = selected_answer.strip().upper() == correct_answer.strip().upper()
+        cached = _cache_get(session_id)
+        if cached is not None:
+            # Copy so we don't mutate the live cache entry mid-handler.
+            state = {k: v for k, v in cached.items() if not k.startswith("_")}
+            prev_consecutive_correct = int(
+                cached.get("_consecutive_correct", session.consecutive_correct or 0)
+            )
         else:
+            # Cache miss — reconstruct the RL state from the DB snapshot.
+            # ``Session.consecutive_correct`` is persisted on every answer,
+            # so we no longer lose the streak across worker restarts.
+            persisted = (
+                session.state_vector
+                if isinstance(session.state_vector, dict)
+                else None
+            )
+            state = {
+                k: v for k, v in (persisted or self.rl.initial_state()).items()
+                if not k.startswith("_")
+            }
+            prev_consecutive_correct = int(session.consecutive_correct or 0)
+            logger.warning(
+                "Session cache miss for %s — reconstructing state from DB "
+                "(topic=%s, streak=%d)",
+                session_id, topic_slug, prev_consecutive_correct,
+            )
+
+        # ── Resolve question (must match the session's topic) ────────────
+        # We refuse to grade a question from a different topic against this
+        # session. Previously a DB-only lookup by id could pull a question
+        # from any topic, and the missing-question branch silently graded
+        # ``selected_answer`` as "correct" (correct_answer defaulted to the
+        # user's input). Both holes are closed here.
+        json_q = _find_question_by_id(question_id, topic_slug)
+        db_q: Question | None = None
+        if json_q is None:
             db_result = await self.db.execute(
-                select(Question).where(Question.id == question_id)
+                select(Question).where(
+                    Question.id == question_id,
+                    Question.topic_id == topic_slug,
+                )
             )
             db_q = db_result.scalar_one_or_none()
-            if db_q:
-                correct_answer = db_q.correct_answer
-                q_explanation = db_q.explanation
-                answered_difficulty = db_q.difficulty
-                is_correct = selected_answer.strip().lower() == correct_answer.strip().lower()
-                db_q.times_served += 1
-                if is_correct:
-                    db_q.times_correct += 1
+
+        if json_q is None and db_q is None:
+            logger.warning(
+                "Rejected answer: question %s not found for topic %s (session=%s)",
+                question_id, topic_slug, session_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=(
+                    f"Question '{question_id}' is not part of this session's topic "
+                    f"'{topic_slug}'. The answer was not graded."
+                ),
+            )
+
+        if json_q:
+            correct_answer = json_q.get("correct_answer", "")
+            q_explanation = json_q.get("explanation")
+            answered_difficulty = json_q.get("difficulty", "medium").lower()
+            is_correct = (
+                selected_answer.strip().upper() == correct_answer.strip().upper()
+            )
+        else:
+            assert db_q is not None  # narrowed by branch above
+            correct_answer = db_q.correct_answer
+            q_explanation = db_q.explanation
+            answered_difficulty = db_q.difficulty
+            is_correct = (
+                selected_answer.strip().lower() == correct_answer.strip().lower()
+            )
+            db_q.times_served += 1
+            if is_correct:
+                db_q.times_correct += 1
 
         # ── Update rich state vector ──────────────────────
         prev_accuracy = state.get("quiz_accuracy", 0.5)
         new_state = self._update_state(state, is_correct, time_taken)
+        consecutive_correct = prev_consecutive_correct + 1 if is_correct else 0
 
         # Determine if this is an improvement for reward calc
         new_acc = new_state["quiz_accuracy"]
@@ -232,9 +365,14 @@ class SessionService:
         )
 
         # ── Persist attempt ───────────────────────────────
+        # For JSON-dataset questions we store the original id on
+        # ``source_question_id`` so per-question analytics is *possible*
+        # later. The current analytics endpoints don't aggregate by it
+        # yet — see app/models/models.py for the field's contract.
         attempt = QuestionAttempt(
             session_id=session_id,
             question_id=question_id if not json_q else None,
+            source_question_id=question_id if json_q else None,
             user_id=user.id,
             selected_answer=selected_answer,
             is_correct=is_correct,
@@ -249,6 +387,9 @@ class SessionService:
         session.total_reward += reward
         session.state_vector = new_state
         session.last_reward = reward
+        # Persist the streak alongside other counters so multi-worker reads
+        # see the latest value even when the in-process cache is cold.
+        session.consecutive_correct = consecutive_correct
         if is_correct:
             session.correct_answers += 1
 
@@ -279,13 +420,21 @@ class SessionService:
         )
         self.db.add(event)
 
-        # Update cache
-        _cache_set(session_id, {**new_state, "_topic": topic_slug})
+        # Update cache (preserves cache-only metadata; not written to DB)
+        _cache_set(
+            session_id,
+            {
+                **new_state,
+                "_topic": topic_slug,
+                "_consecutive_correct": consecutive_correct,
+            },
+        )
 
         if session_done:
             await self._finalize_session(session, new_state, user)
 
-        await self.db.commit()
+        # Let get_db() commit the whole answer atomically.
+        await self.db.flush()
 
         return AnswerResponse(
             is_correct=is_correct,
@@ -298,7 +447,7 @@ class SessionService:
             next_question=next_question,
             session_done=session_done,
             updated_state=new_state,
-            streak=int(new_state.get("quiz_accuracy", 0) * 10),
+            streak=consecutive_correct,
         )
 
     async def end_session(self, user: User, session_id: str) -> SessionSummary:
@@ -309,12 +458,20 @@ class SessionService:
         if not session:
             raise HTTPException(status_code=404, detail="Session not found.")
 
-        state = _cache_get(session_id) or self.rl.initial_state()
+        cached = _cache_get(session_id)
+        if cached is not None:
+            # Strip cache-only metadata before persisting as state_vector.
+            state = {k: v for k, v in cached.items() if not k.startswith("_")}
+        else:
+            persisted = session.state_vector if isinstance(session.state_vector, dict) else None
+            state = persisted or self.rl.initial_state()
+
         if session.status == "active":
             await self._finalize_session(session, state, user)
 
         _cache_delete(session_id)
-        await self.db.commit()
+        # Commit happens in get_db() once the handler returns successfully.
+        await self.db.flush()
         return self._build_summary(session)
 
     # ── Private helpers ───────────────────────────────────
@@ -333,6 +490,18 @@ class SessionService:
         return session
 
     async def _fetch_question(self, difficulty: str, topic: str) -> QuestionPayload | None:
+        """Return the next question for ``topic`` at the requested difficulty.
+
+        Strict topic scoping — never falls back to another topic's questions.
+        Order tried:
+          1. Local JSON dataset under that topic.
+          2. DB ``questions`` row with ``topic_id == topic`` and matching difficulty.
+          3. DB ``questions`` row with ``topic_id == topic`` (any difficulty).
+
+        Returns ``None`` only when this topic genuinely has no content at the
+        requested difficulty or below. The caller should surface a clean
+        empty-session response in that case.
+        """
         # 1. Try local JSON dataset (if curated for this topic)
         q = _load_random_question(topic, difficulty)
         if q:
@@ -346,7 +515,7 @@ class SessionService:
                 source=q.get("source", "dataset"),
             )
 
-        # 2. DB fallback — filter by topic + difficulty first
+        # 2. DB lookup — filter by topic + difficulty
         result = await self.db.execute(
             select(Question)
             .where(
@@ -357,17 +526,10 @@ class SessionService:
         )
         qs = result.scalars().all()
 
-        # 3. Relax to any difficulty for the same topic
+        # 3. Relax to any difficulty for THIS topic only — never cross topics.
         if not qs:
             result = await self.db.execute(
                 select(Question).where(Question.topic_id == topic).limit(20)
-            )
-            qs = result.scalars().all()
-
-        # 4. Last resort: any question of the requested difficulty
-        if not qs:
-            result = await self.db.execute(
-                select(Question).where(Question.difficulty == difficulty).limit(20)
             )
             qs = result.scalars().all()
 
@@ -386,15 +548,26 @@ class SessionService:
         return None
 
     def _update_state(self, state: dict, is_correct: bool, time_taken: int) -> dict:
-        """
-        Update the rich 7-feature state after each answer.
-        Uses exponential moving average for accuracy metrics.
+        """Update the rich 7-feature state after each MCQ answer.
+
+        Uses an exponential moving average for accuracy metrics. Quiz sessions
+        produce MCQ answers, so we drive both ``quiz_accuracy`` and
+        ``mcq_accuracy`` from the same outcome. ``lab_success_rate`` is left
+        untouched here — it is updated separately from learning-mode lab
+        events so quiz-only sessions don't accidentally inflate or deflate
+        the lab signal.
         """
         new = state.copy()
         alpha = 0.2   # EMA smoothing factor
+        outcome = 1.0 if is_correct else 0.0
 
         old_qa = state.get("quiz_accuracy", 0.5)
-        new["quiz_accuracy"] = round(old_qa * (1 - alpha) + (1.0 if is_correct else 0.0) * alpha, 4)
+        new["quiz_accuracy"] = round(old_qa * (1 - alpha) + outcome * alpha, 4)
+
+        # Keep MCQ-specific accuracy in lockstep with the quiz signal during
+        # quiz sessions — every answer here IS an MCQ.
+        old_ma = state.get("mcq_accuracy", 0.5)
+        new["mcq_accuracy"] = round(old_ma * (1 - alpha) + outcome * alpha, 4)
 
         # Trend
         if new["quiz_accuracy"] > old_qa + 0.02:

@@ -45,7 +45,12 @@ async def student_dashboard(
     )
     weak = metric_result.all()
     weak_data = [
-        {"topic": name, "mastery": round(m.mastery_score, 1), "attempted": m.questions_attempted}
+        {
+            "topic": name,
+            "topic_slug": m.topic_id,
+            "mastery": round(m.mastery_score, 1),
+            "attempted": m.questions_attempted,
+        }
         for m, name in weak
     ]
 

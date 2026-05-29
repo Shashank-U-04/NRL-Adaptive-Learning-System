@@ -2,7 +2,7 @@
 NRL Adaptive Learning System — Database Seeder
 
 Seeds cybersecurity topics + a starter question bank.
-Run:  python -m backend.seed
+Run from the backend/ directory:  python seed.py
 """
 
 import asyncio

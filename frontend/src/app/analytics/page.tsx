@@ -16,6 +16,18 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
+// Slugify a topic title for fallback when the backend doesn't return topic_slug.
+// Mirrors backend `_normalize_topic`: lowercase, collapse whitespace/underscore
+// runs to single hyphens, trim leading/trailing hyphens.
+function slugify(title: string): string {
+  return title
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 interface AnalyticsKpiProps {
   icon: React.ElementType;
   label: string;
@@ -270,7 +282,9 @@ export default function AnalyticsPage() {
                       </div>
                     </div>
                     <Link
-                      href={`/session?topic=${encodeURIComponent(wt.topic)}`}
+                      href={`/session?topic=${encodeURIComponent(
+                        wt.topic_slug ?? slugify(wt.topic),
+                      )}`}
                       className="btn btn-ghost"
                       style={{ height: 34, fontSize: 13 }}
                     >

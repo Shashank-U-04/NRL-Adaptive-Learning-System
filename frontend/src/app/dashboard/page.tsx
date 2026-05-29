@@ -17,6 +17,18 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
+// Mirrors backend ``_normalize_topic``: lowercase, collapse runs of whitespace
+// or underscores into a single hyphen, trim leading/trailing hyphens. Used as
+// a fallback when the backend response predates the ``topic_slug`` field.
+function slugify(title: string): string {
+  return title
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 // ── Helpers ──────────────────────────────────────────────
 function DifficultyBadge({ level }: { level: string }) {
   const l = (level || "").toLowerCase();
@@ -143,14 +155,21 @@ export default function DashboardPage() {
     ? Math.round(last7[last7.length - 1].accuracy - last7[0].accuracy)
     : null;
 
-  const weakestTopic =
-    dashboard?.weak_topics?.[0]?.topic ||
-    (radarData.length > 0
-      ? radarData.reduce((a, b) => (a.mastery < b.mastery ? a : b)).topic
-      : null);
+  const weakestEntry = dashboard?.weak_topics?.[0];
+  const weakestRadar = radarData.length > 0
+    ? radarData.reduce((a, b) => (a.mastery < b.mastery ? a : b))
+    : null;
 
-  const trackHref = weakestTopic
-    ? `/session?topic=${encodeURIComponent(weakestTopic)}`
+  // Title is for display, slug is for routing. Backend now returns topic_slug;
+  // fall back to slugify(title) for older payloads.
+  const weakestTitle: string | null =
+    weakestEntry?.topic ?? weakestRadar?.topic ?? null;
+  const weakestSlug: string | null = weakestTitle
+    ? (weakestEntry?.topic_slug ?? slugify(weakestTitle))
+    : null;
+
+  const trackHref = weakestSlug
+    ? `/session?topic=${encodeURIComponent(weakestSlug)}`
     : "/session";
 
   // ── Render ───────────────────────────────────────────
@@ -292,7 +311,7 @@ export default function DashboardPage() {
           </motion.div>
 
           {/* AI recommendation banner */}
-          {weakestTopic && (
+          {weakestTitle && (
             <motion.div
               initial={{ opacity: 0, y: 12 }}
               whileInView={{ opacity: 1, y: 0 }}
@@ -319,7 +338,7 @@ export default function DashboardPage() {
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 500, fontSize: 14, color: "var(--text)" }}>
-                  The AI engine recommends focusing on <strong>{weakestTopic}</strong> next.
+                  The AI engine recommends focusing on <strong>{weakestTitle}</strong> next.
                 </div>
                 <div style={{ fontSize: 12, color: "var(--text-2)", marginTop: 2 }}>
                   Personalized path based on your recent performance.

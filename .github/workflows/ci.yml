@@ -14,6 +14,7 @@ jobs:
   backend-tests:
     name: Backend tests
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -28,7 +29,8 @@ jobs:
         working-directory: backend
         run: |
           python -m pip install --upgrade pip
-          # Install everything except torch on CI to keep wheel small/fast
+          # Install everything except torch on CI to keep wheel small/fast.
+          # Torch-dependent tests skip cleanly via pytest.importorskip.
           grep -v "^torch" requirements.txt > /tmp/req-ci.txt
           pip install -r /tmp/req-ci.txt
 
@@ -36,15 +38,23 @@ jobs:
         working-directory: backend
         env:
           DATABASE_URL: "sqlite+aiosqlite:///:memory:"
-          RATE_LIMIT_ENABLED: "false"
-          METRICS_ENABLED: "false"
-          AI_PROVIDER: "none"
-          SECRET_KEY: "ci-test-secret-key-32-characters-long-padding"
+          # Conftest also sets this, but kept here for clarity.
+          SUPABASE_JWT_SECRET: "test-supabase-jwt-secret-sentinel"
+          ENVIRONMENT: "test"
+          DEBUG: "true"
         run: pytest -v --tb=short
 
   frontend-build:
-    name: Frontend build
+    name: Frontend typecheck + lint + build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Placeholder NEXT_PUBLIC_* envs let `next build` complete without
+    # crashing on missing public env vars. NOT secrets — real deploys
+    # supply real values via the host platform.
+    env:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
     steps:
       - uses: actions/checkout@v4
 
@@ -57,22 +67,66 @@ jobs:
 
       - name: Install dependencies
         working-directory: frontend
-        run: npm ci
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Typecheck
+        working-directory: frontend
+        run: npm run typecheck
 
       - name: Lint
         working-directory: frontend
-        run: npm run lint --if-present
-        continue-on-error: true
+        # No more continue-on-error — lint failures must block.
+        run: npm run lint -- --max-warnings=0
 
       - name: Build
         working-directory: frontend
-        env:
-          NEXT_PUBLIC_API_URL: http://localhost:8000
         run: npm run build
 
-  security-scan:
-    name: Security scan
+  secret-scan:
+    name: Secret scan (gitleaks, current tree only — TEMPORARY)
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    # NOTE: full-history scanning was restored after git history was
+    # scrubbed via git-filter-repo to remove the legacy
+    # backend/test_jwt2.py leak. If you ever roll back history, swap
+    # this to --no-git again and rotate any leaked secret.
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so gitleaks scans past commits too. Safe now
+          # that the leaked file is purged from history.
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        run: |
+          set -euo pipefail
+          GITLEAKS_VERSION="8.21.2"
+          curl -sSfL -o gitleaks.tgz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          tar -xzf gitleaks.tgz gitleaks
+          sudo mv gitleaks /usr/local/bin/
+          gitleaks version
+
+      - name: Scan repository (full history)
+        run: |
+          gitleaks detect \
+            --source . \
+            --config .gitleaks.toml \
+            --redact \
+            --verbose \
+            --exit-code 1
+
+  vuln-scan:
+    name: Vulnerability scan (Trivy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       security-events: write
@@ -88,7 +142,7 @@ jobs:
           output: trivy-results.sarif
           severity: HIGH,CRITICAL
           ignore-unfixed: true
-        continue-on-error: true
+          exit-code: "1"
 
       - name: Upload Trivy results
         if: always()

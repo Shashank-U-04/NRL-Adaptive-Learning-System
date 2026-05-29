@@ -15,6 +15,7 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
 } from "react";
 import { useRouter } from "next/navigation";
@@ -77,6 +78,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  // Holds the in-flight refresh promise so concurrent callers share the same
+  // result instead of duplicating /auth/me requests. `null` means no
+  // refresh in progress.
+  const refreshPromiseRef = useRef<Promise<void> | null>(null);
   const toast = useToast();
   const router = useRouter();
 
@@ -95,49 +100,62 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [toast, router],
   );
 
-  const refreshUser = useCallback(async () => {
-    const { data: sessionData } = await supabase.auth.getSession();
+  const refreshUser = useCallback((): Promise<void> => {
+    // If a refresh is already in flight, return the same promise so every
+    // awaiter genuinely waits for the real fetch instead of resolving early.
+    if (refreshPromiseRef.current) return refreshPromiseRef.current;
 
-    if (!sessionData.session) {
-      setUser(null);
-      setProfile(null);
-      return;
-    }
+    const run = (async () => {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
 
-    // Build a fallback from the Supabase session — used ONLY for network/5xx errors
-    const fallbackUser = buildFallbackUser(sessionData.session.user);
-
-    try {
-      const data = await authApi.me();
-      setUser(data.user);
-      setProfile(data.profile ?? null);
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        // Token rejected by backend — try refreshing the Supabase session
-        const { data: refreshed, error: refreshErr } =
-          await supabase.auth.refreshSession();
-
-        if (refreshErr || !refreshed.session) {
-          await doSignOut("Your session has expired. Please sign in again.");
+        if (!sessionData.session) {
+          setUser(null);
+          setProfile(null);
           return;
         }
 
-        // One more attempt with the freshly refreshed token
+        // Fallback from the Supabase session — used ONLY for network/5xx errors.
+        const fallbackUser = buildFallbackUser(sessionData.session.user);
+
         try {
           const data = await authApi.me();
           setUser(data.user);
           setProfile(data.profile ?? null);
-        } catch {
-          await doSignOut("Authentication failed. Please sign in again.");
+        } catch (err) {
+          if (err instanceof ApiError && err.status === 401) {
+            // Token rejected by backend — try refreshing the Supabase session.
+            const { data: refreshed, error: refreshErr } =
+              await supabase.auth.refreshSession();
+
+            if (refreshErr || !refreshed.session) {
+              await doSignOut("Your session has expired. Please sign in again.");
+              return;
+            }
+
+            // One more attempt with the freshly refreshed token.
+            try {
+              const data = await authApi.me();
+              setUser(data.user);
+              setProfile(data.profile ?? null);
+            } catch {
+              await doSignOut("Authentication failed. Please sign in again.");
+            }
+          } else {
+            // Network error or backend temporarily unavailable (5xx, ECONNREFUSED).
+            // Keep the user "logged in" via the Supabase session so a backend
+            // restart doesn't force everyone to re-authenticate.
+            console.warn("Backend /auth/me unreachable, using Supabase session:", err);
+            setUser(fallbackUser);
+          }
         }
-      } else {
-        // Network error or backend temporarily unavailable (5xx, ECONNREFUSED).
-        // Keep the user "logged in" via the Supabase session so a backend
-        // restart doesn't force everyone to re-authenticate.
-        console.warn("Backend /auth/me unreachable, using Supabase session:", err);
-        setUser(fallbackUser);
+      } finally {
+        refreshPromiseRef.current = null;
       }
-    }
+    })();
+
+    refreshPromiseRef.current = run;
+    return run;
   }, [doSignOut]);
 
   useEffect(() => {
@@ -210,9 +228,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
-    setProfile(null);
+    // Delegate to the central sign-out path so we get the redirect-to-login
+    // behaviour. Pass no message: an intentional logout shouldn't surface a
+    // "session expired" toast.
+    await doSignOut();
   };
 
   return (

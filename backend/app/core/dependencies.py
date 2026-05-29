@@ -83,11 +83,14 @@ async def get_current_user(
     upsert). Raises 401 for missing/invalid/expired tokens and 403 for
     deactivated accounts.
 
-    Audience verification is intentionally disabled: Supabase issues tokens
-    with `aud="authenticated"` for end-users, but the value can differ across
-    project versions and for service-role tokens. We instead trust HS256
-    signature validation against the project's JWT secret plus an explicit
-    `sub` (user id) check below.
+    Audience verification by PyJWT is disabled because Supabase has shipped
+    multiple ``aud`` shapes (string vs list, ``"authenticated"`` vs project
+    URL). We perform an explicit, narrow check below instead:
+
+      * ``sub`` (user id) must be present.
+      * The token must represent an end-user — either ``role == "authenticated"``
+        or ``aud`` contains ``"authenticated"``. This rejects ``service_role``
+        and ``anon`` keys that share the same signing secret.
     """
     credentials_error = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -129,6 +132,19 @@ async def get_current_user(
 
     if not supabase_sub:
         logger.warning("JWT missing 'sub' claim")
+        raise credentials_error
+
+    role = payload.get("role")
+    aud = payload.get("aud")
+    aud_list: list[str] = (
+        [aud] if isinstance(aud, str) else list(aud) if isinstance(aud, (list, tuple)) else []
+    )
+    is_end_user = role == "authenticated" or "authenticated" in aud_list
+    if not is_end_user:
+        logger.warning(
+            "Rejected non-user JWT (role=%r, aud=%r) for sub=%s",
+            role, aud, supabase_sub,
+        )
         raise credentials_error
 
     metadata: dict = payload.get("user_metadata") or {}

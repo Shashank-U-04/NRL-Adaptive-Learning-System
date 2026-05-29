@@ -90,6 +90,18 @@ coverage.xml
 AGENTS.md
 CLAUDE.md
 RESTRUCTURE_PLAN.md
+# Local-only review artefacts — never commit; may quote sensitive material.
+latest_review.md
+
+# ── Debug-only routes (local utilities, never deployed) ─────────
+# clear-session is a developer helper for wiping a stuck Supabase
+# session locally. The production build refuses to render it, but
+# keeping the file untracked avoids accidental deploys.
+frontend/src/app/clear-session/
+
+# ── Agent scratch ────────────────────────────────────────────────
+# Local AI-agent scratch directories. Never commit.
+brain/
 
 # ── Certificates ─────────────────────────────────────
 *.pem

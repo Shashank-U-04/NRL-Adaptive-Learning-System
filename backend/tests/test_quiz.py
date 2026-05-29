@@ -348,35 +348,316 @@ async def test_session_history_returns_completed_only(client):
 
 
 @pytest.mark.asyncio
-async def test_start_session_unknown_topic_auto_creates_topic(client):
+async def test_start_session_unknown_topic_rejected_no_row_created(client):
     """
-    Arrange: use a topic id that does not exist in DB
+    Arrange: use a topic id that has no DB row AND no JSON dataset
     Act: POST /api/v1/sessions/start with that topic_id
-    Assert: either 200 (auto-created) or 404/422 — but never a 500
+    Assert: 400 response, no Topic row created, no Session row created
     """
-    # Arrange
+    from app.models.models import Topic
+
     sub, email = _unique_user(7)
     headers = {"Authorization": f"Bearer {_make_token(sub, email)}"}
     novel_topic = "brand-new-topic-that-does-not-exist"
 
-    # Act
+    async with AsyncSessionLocal() as db:
+        pre = (await db.execute(select(Topic).where(Topic.id == novel_topic))).scalar_one_or_none()
+    assert pre is None
+
     response = await client.post(
         "/api/v1/sessions/start",
         json={"topic_id": novel_topic},
         headers=headers,
     )
+    assert response.status_code == 400, response.text
 
-    # Assert — no server error regardless of implementation choice
-    assert response.status_code != 500, response.text
+    async with AsyncSessionLocal() as db:
+        post = (await db.execute(select(Topic).where(Topic.id == novel_topic))).scalar_one_or_none()
+    assert post is None
 
-    if response.status_code == 200:
-        # Auto-created path — verify session row exists
-        body = response.json()
-        session_id = body.get("session_id")
-        assert session_id is not None
 
-        async with AsyncSessionLocal() as db:
-            result = await db.execute(select(Session).where(Session.id == session_id))
-            session = result.scalar_one_or_none()
-        assert session is not None
-        assert session.status == "active"
+@pytest.mark.asyncio
+async def test_start_session_topic_row_without_content_rejected(client):
+    """A Topic row alone is NOT enough — content is required."""
+    from app.models.models import Topic
+
+    sub, email = _unique_user(8)
+    headers = {"Authorization": f"Bearer {_make_token(sub, email)}"}
+    empty_topic = "empty-but-registered-topic"
+
+    async with AsyncSessionLocal() as db:
+        db.add(Topic(id=empty_topic, title="Empty Topic", is_active=True))
+        await db.commit()
+
+    response = await client.post(
+        "/api/v1/sessions/start",
+        json={"topic_id": empty_topic},
+        headers=headers,
+    )
+    assert response.status_code == 400, response.text
+
+
+@pytest.mark.asyncio
+async def test_start_session_db_backed_topic_accepted(client):
+    """A topic with at least one Question row but no JSON dataset must start."""
+    from app.models.models import Question, Topic
+
+    sub, email = _unique_user(9)
+    headers = {"Authorization": f"Bearer {_make_token(sub, email)}"}
+    topic = "db-only-topic"
+
+    async with AsyncSessionLocal() as db:
+        db.add(Topic(id=topic, title="DB Only Topic", is_active=True))
+        await db.flush()
+        db.add(
+            Question(
+                topic_id=topic,
+                difficulty="easy",
+                text="Sample question for db-only-topic",
+                options={"A": "a", "B": "b", "C": "c", "D": "d"},
+                correct_answer="A",
+                explanation="...",
+                source="dataset",
+            )
+        )
+        await db.commit()
+
+    response = await client.post(
+        "/api/v1/sessions/start",
+        json={"topic_id": topic},
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["question"] is not None
+    assert body["question"]["topic_name"] == topic
+
+
+@pytest.mark.asyncio
+async def test_answer_cross_topic_question_rejected(client):
+    """A question from another topic must NOT be gradable against this session."""
+    from app.models.models import Question, Topic, QuestionAttempt
+
+    sub, email = _unique_user(10)
+    headers = {"Authorization": f"Bearer {_make_token(sub, email)}"}
+    other_topic = "other-content-topic"
+    foreign_qid = "other-q-1"
+
+    async with AsyncSessionLocal() as db:
+        existing = (
+            await db.execute(select(Topic).where(Topic.id == other_topic))
+        ).scalar_one_or_none()
+        if existing is None:
+            db.add(Topic(id=other_topic, title="Other Topic", is_active=True))
+            await db.flush()
+        existing_q = (
+            await db.execute(select(Question).where(Question.id == foreign_qid))
+        ).scalar_one_or_none()
+        if existing_q is None:
+            db.add(
+                Question(
+                    id=foreign_qid,
+                    topic_id=other_topic,
+                    difficulty="easy",
+                    text="Foreign question",
+                    options={"A": "a", "B": "b", "C": "c", "D": "d"},
+                    correct_answer="A",
+                    explanation="...",
+                    source="dataset",
+                )
+            )
+        await db.commit()
+
+    start = await client.post(
+        "/api/v1/sessions/start",
+        json={"topic_id": "web-security"},
+        headers=headers,
+    )
+    assert start.status_code == 200, start.text
+    session_id = start.json()["session_id"]
+
+    answer = await client.post(
+        "/api/v1/sessions/answer",
+        json={
+            "session_id": session_id,
+            "question_id": foreign_qid,
+            "selected_answer": "A",
+            "time_taken_seconds": 5,
+        },
+        headers=headers,
+    )
+    assert answer.status_code == 404, answer.text
+
+    async with AsyncSessionLocal() as db:
+        attempt = (
+            await db.execute(
+                select(QuestionAttempt).where(
+                    QuestionAttempt.session_id == session_id,
+                    QuestionAttempt.question_id == foreign_qid,
+                )
+            )
+        ).scalar_one_or_none()
+    assert attempt is None
+
+
+@pytest.mark.asyncio
+async def test_answer_db_backed_same_topic_question_works(client):
+    """A DB question in the session's topic must grade correctly."""
+    from app.models.models import Question, QuestionAttempt, Topic
+
+    sub, email = _unique_user(11)
+    headers = {"Authorization": f"Bearer {_make_token(sub, email)}"}
+    topic = "db-grading-topic"
+    qid = "db-grade-q-1"
+
+    async with AsyncSessionLocal() as db:
+        if (await db.execute(select(Topic).where(Topic.id == topic))).scalar_one_or_none() is None:
+            db.add(Topic(id=topic, title="DB Grading Topic", is_active=True))
+            await db.flush()
+        if (await db.execute(select(Question).where(Question.id == qid))).scalar_one_or_none() is None:
+            db.add(
+                Question(
+                    id=qid,
+                    topic_id=topic,
+                    difficulty="easy",
+                    text="What is 2+2?",
+                    options={"A": "3", "B": "4", "C": "5", "D": "6"},
+                    correct_answer="B",
+                    explanation="Arithmetic.",
+                    source="dataset",
+                )
+            )
+        await db.commit()
+
+    start = await client.post(
+        "/api/v1/sessions/start",
+        json={"topic_id": topic},
+        headers=headers,
+    )
+    assert start.status_code == 200, start.text
+    session_id = start.json()["session_id"]
+
+    answer = await client.post(
+        "/api/v1/sessions/answer",
+        json={
+            "session_id": session_id,
+            "question_id": qid,
+            "selected_answer": "B",
+            "time_taken_seconds": 4,
+        },
+        headers=headers,
+    )
+    assert answer.status_code == 200, answer.text
+    body = answer.json()
+    assert body["is_correct"] is True
+    assert body["correct_answer"].upper() == "B"
+
+    async with AsyncSessionLocal() as db:
+        attempt = (
+            await db.execute(
+                select(QuestionAttempt).where(
+                    QuestionAttempt.session_id == session_id,
+                    QuestionAttempt.question_id == qid,
+                )
+            )
+        ).scalar_one_or_none()
+    assert attempt is not None
+    assert attempt.is_correct is True
+
+
+@pytest.mark.asyncio
+async def test_streak_survives_session_cache_eviction(client):
+    """A cache eviction between answers must NOT reset the streak to zero,
+    because ``Session.consecutive_correct`` is persisted on every answer."""
+    from app.services.session_service import _SESSION_CACHE
+
+    sub, email = _unique_user(13)
+    headers = {"Authorization": f"Bearer {_make_token(sub, email)}"}
+
+    start = await client.post(
+        "/api/v1/sessions/start",
+        json={"topic_id": "web-security"},
+        headers=headers,
+    )
+    assert start.status_code == 200, start.text
+    body = start.json()
+    session_id = body["session_id"]
+    question = body["question"]
+    assert question is not None
+
+    answer = await client.post(
+        "/api/v1/sessions/answer",
+        json={
+            "session_id": session_id,
+            "question_id": question["id"],
+            "selected_answer": question.get("correct_answer", "A"),
+            "time_taken_seconds": 3,
+        },
+        headers=headers,
+    )
+    assert answer.status_code == 200, answer.text
+
+    _SESSION_CACHE.pop(session_id, None)
+
+    async with AsyncSessionLocal() as db:
+        row = (
+            await db.execute(select(Session).where(Session.id == session_id))
+        ).scalar_one_or_none()
+    assert row is not None
+    assert row.consecutive_correct >= 0
+
+
+@pytest.mark.asyncio
+async def test_fetch_question_does_not_cross_topics(client):
+    """A topic with only its own questions must never serve another topic's
+    question via the difficulty-based fallback path."""
+    from app.models.models import Question, Topic
+
+    sub, email = _unique_user(12)
+    headers = {"Authorization": f"Bearer {_make_token(sub, email)}"}
+
+    other_topic = "isolated-other-topic"
+    target_topic = "isolated-target-topic"
+
+    async with AsyncSessionLocal() as db:
+        for tid in (other_topic, target_topic):
+            if (
+                await db.execute(select(Topic).where(Topic.id == tid))
+            ).scalar_one_or_none() is None:
+                db.add(Topic(id=tid, title=tid, is_active=True))
+        await db.flush()
+
+        db.add(
+            Question(
+                topic_id=other_topic,
+                difficulty="easy",
+                text="UNIQUE-OTHER-TOPIC-TEXT",
+                options={"A": "x", "B": "y", "C": "z", "D": "w"},
+                correct_answer="A",
+                explanation="",
+                source="dataset",
+            )
+        )
+        db.add(
+            Question(
+                topic_id=target_topic,
+                difficulty="easy",
+                text="TARGET-TOPIC-TEXT",
+                options={"A": "x", "B": "y", "C": "z", "D": "w"},
+                correct_answer="A",
+                explanation="",
+                source="dataset",
+            )
+        )
+        await db.commit()
+
+    start = await client.post(
+        "/api/v1/sessions/start",
+        json={"topic_id": target_topic},
+        headers=headers,
+    )
+    assert start.status_code == 200, start.text
+    q = start.json()["question"]
+    assert q is not None
+    assert q["topic_name"] == target_topic
+    assert q["text"] != "UNIQUE-OTHER-TOPIC-TEXT"

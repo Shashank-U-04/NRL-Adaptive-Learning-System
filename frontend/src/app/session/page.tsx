@@ -11,7 +11,7 @@ import { useToast } from "@/lib/toast";
 import AppLayout from "@/components/AppLayout";
 import {
   Play, ChevronRight, Check, X, Sparkles, Flame, Brain,
-  Globe, Shield, Lock, Layers, Bug, Database, Trophy, ArrowRight,
+  Network, Shield, Lock, KeyRound, Code2, Trophy, ArrowRight,
   Clock, Zap,
 } from "lucide-react";
 
@@ -28,13 +28,20 @@ interface SessionSummaryData {
 }
 
 // ── Topic definitions ────────────────────────────────────
+// Slugs are kept in sync with backend/seed.py and the learning catalog so
+// links between dashboard/analytics/session/learning never break.
+//
+// `available: true` means the topic has rich JSON content with all three
+// difficulty levels under backend/app/data/cybersecurity/<slug>/level{1,2,3}.json.
+// `available: false` means seed.py has DB questions for it, but no curated
+// difficulty-tiered JSON — sessions will still work post-seed, but the picker
+// currently surfaces only the fully-featured topics.
 const TOPICS = [
-  { id: "networking",       name: "Networking",       icon: Globe,    color: "#3B82F6", subtitle: "Protocols, ports & packets" },
-  { id: "web-security",     name: "Web Security",     icon: Shield,   color: "#10B981", subtitle: "OWASP, XSS, CSRF" },
-  { id: "cryptography",     name: "Cryptography",     icon: Lock,     color: "#8B5CF6", subtitle: "Ciphers, hashing & keys" },
-  { id: "system-security",  name: "System Security",  icon: Layers,   color: "#F59E0B", subtitle: "OS hardening & privileges" },
-  { id: "ethical-hacking",  name: "Ethical Hacking",  icon: Bug,      color: "#F43F5E", subtitle: "Recon, exploitation & reporting" },
-  { id: "forensics",        name: "Forensics",        icon: Database, color: "#14B8A6", subtitle: "Evidence, IOCs & timelines" },
+  { id: "web-security",     name: "Web Security",         icon: Shield,   color: "#10B981", subtitle: "OWASP, XSS, CSRF, SQLi",               available: true  },
+  { id: "network-security", name: "Network Security",     icon: Network,  color: "#3B82F6", subtitle: "TLS, segmentation, firewalls",         available: false },
+  { id: "cryptography",     name: "Cryptography",         icon: Lock,     color: "#8B5CF6", subtitle: "Ciphers, hashing & keys",              available: false },
+  { id: "auth-and-iam",     name: "Authentication & IAM", icon: KeyRound, color: "#F59E0B", subtitle: "MFA, SSO, OAuth, JWTs",                available: false },
+  { id: "secure-coding",    name: "Secure Coding",        icon: Code2,    color: "#F43F5E", subtitle: "Input validation, deps, secrets",      available: false },
 ] as const;
 
 const OPTION_LETTERS = ["A", "B", "C", "D"] as const;
@@ -177,8 +184,10 @@ function SessionPageInner() {
           xp_earned: summaryRes.xp_earned || 0,
           duration_seconds: timerRef.current,
         });
+        // Await so XP/streak in the summary view reflects the latest server
+        // state before the user can navigate away.
+        await refreshUser();
         setSessionState("summary");
-        refreshUser();
       } else {
         setQuestion(res.next_question);
         setActiveTopic(res.next_question?.topic_name || activeTopic);
@@ -209,8 +218,8 @@ function SessionPageInner() {
         xp_earned: res.xp_earned || 0,
         duration_seconds: timerRef.current,
       });
+      await refreshUser();
       setSessionState("summary");
-      refreshUser();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to end session");
     }
@@ -312,49 +321,68 @@ function SessionPageInner() {
                 gap: 12,
               }}
             >
-              {TOPICS.map(({ id, name, icon: Icon, color, subtitle }) => (
-                <motion.button
-                  key={id}
-                  variants={cardVariants}
-                  whileHover={{ y: -2 }}
-                  whileTap={{ scale: 0.99 }}
-                  className="glass glass-hover"
-                  onClick={() => startSession(id)}
-                  disabled={isSessionLoading}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 14,
-                    padding: "18px 20px",
-                    cursor: "pointer",
-                    textAlign: "left",
-                    width: "100%",
-                    border: "1px solid var(--line)",
-                  }}
-                >
-                  <div
+              {TOPICS.map(({ id, name, icon: Icon, color, subtitle, available }) => {
+                const isDisabled = !available || isSessionLoading;
+                return (
+                  <motion.button
+                    key={id}
+                    variants={cardVariants}
+                    whileHover={!isDisabled ? { y: -2 } : {}}
+                    whileTap={!isDisabled ? { scale: 0.99 } : {}}
+                    className="glass glass-hover"
+                    onClick={() => {
+                      if (!available) {
+                        toast.info(`${name} content is coming soon.`);
+                        return;
+                      }
+                      startSession(id);
+                    }}
+                    disabled={isDisabled}
+                    aria-disabled={isDisabled}
+                    title={available ? undefined : "Content coming soon"}
                     style={{
-                      width: 44,
-                      height: 44,
-                      borderRadius: 12,
-                      background: `linear-gradient(135deg, ${color}22, ${color}10)`,
-                      border: `1px solid ${color}33`,
-                      color,
-                      display: "grid",
-                      placeItems: "center",
-                      flexShrink: 0,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 14,
+                      padding: "18px 20px",
+                      cursor: available ? "pointer" : "not-allowed",
+                      textAlign: "left",
+                      width: "100%",
+                      border: "1px solid var(--line)",
+                      opacity: available ? 1 : 0.55,
                     }}
                   >
-                    <Icon size={20} />
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 2 }}>{name}</div>
-                    <div style={{ fontSize: 12, color: "var(--text-3)" }}>{subtitle}</div>
-                    <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 4 }}>10 questions · ~6 min</div>
-                  </div>
-                  <ChevronRight size={16} style={{ color: "var(--text-3)", flexShrink: 0 }} />
-                </motion.button>
-              ))}
+                    <div
+                      style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: 12,
+                        background: `linear-gradient(135deg, ${color}22, ${color}10)`,
+                        border: `1px solid ${color}33`,
+                        color,
+                        display: "grid",
+                        placeItems: "center",
+                        flexShrink: 0,
+                      }}
+                    >
+                      <Icon size={20} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontWeight: 600, fontSize: 14 }}>{name}</span>
+                        {!available && (
+                          <span className="pill pill-neutral" style={{ fontSize: 10 }}>
+                            Coming soon
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 2 }}>{subtitle}</div>
+                      <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 4 }}>10 questions · ~6 min</div>
+                    </div>
+                    <ChevronRight size={16} style={{ color: "var(--text-3)", flexShrink: 0 }} />
+                  </motion.button>
+                );
+              })}
             </motion.div>
 
           </div>

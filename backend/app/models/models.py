@@ -18,7 +18,10 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
-from app.core.database import Base
+# Use the side-effect-free Base so tools (alembic, schema dumps, doc
+# generators) can import the model metadata without triggering async
+# engine creation in app.core.database.
+from app.core.db_base import Base
 
 
 def _uuid() -> str:
@@ -187,6 +190,9 @@ class Session(Base):
     correct_answers = Column(Integer, default=0)
     total_reward = Column(Float, default=0.0)
     hints_used = Column(Integer, default=0)
+    # Live streak counter — persisted so a session-cache miss (multi-worker,
+    # restart, eviction) doesn't reset the user-visible flame back to 0.
+    consecutive_correct = Column(Integer, default=0, nullable=False)
     started_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     ended_at = Column(DateTime(timezone=True), nullable=True)
     final_knowledge_level = Column(Integer, nullable=True)
@@ -242,6 +248,13 @@ class QuestionAttempt(Base):
     id = Column(String, primary_key=True, default=_uuid)
     session_id = Column(String, ForeignKey("sessions.id"), nullable=False, index=True)
     question_id = Column(String, ForeignKey("questions.id"), nullable=True)
+    # External ID for static JSON dataset questions (which don't have a
+    # row in the ``questions`` table). Stored for FUTURE per-question
+    # analytics — at the time of writing the analytics endpoints
+    # (/analytics/dashboard, /analytics/accuracy, /analytics/topics) do
+    # not yet aggregate by this field. It's recorded so that aggregation
+    # is possible without a backfill once those reports are added.
+    source_question_id = Column(String(80), nullable=True)
     user_id = Column(String, ForeignKey("users.id"), nullable=False)
     selected_answer = Column(String(10), nullable=False)
     is_correct = Column(Boolean, nullable=False)

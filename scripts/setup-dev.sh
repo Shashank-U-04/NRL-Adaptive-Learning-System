@@ -28,9 +28,10 @@ if [ ! -f ".env" ]; then
   echo "[setup] creating .env from .env.example"
   cp .env.example .env
   echo
-  echo " ⚠️  .env created with defaults. Edit it before running:"
-  echo "     - DATABASE_URL  (Neon connection string)"
-  echo "     - SECRET_KEY    (long random value for prod)"
+  echo " WARNING: .env created with defaults. Edit it before running:"
+  echo "     - DATABASE_URL         (Neon connection string)"
+  echo "     - SUPABASE_JWT_SECRET  (from Supabase dashboard, required)"
+  echo "     - SUPABASE_URL         (optional)"
   echo
 fi
 

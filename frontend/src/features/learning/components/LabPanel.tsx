@@ -6,14 +6,16 @@ import { Lab } from "../types";
 import SkeuomorphicPanel from "@/components/ui/SkeuomorphicPanel";
 import NeumorphicButton from "@/components/ui/NeumorphicButton";
 import { Terminal, Play, CheckCircle2, AlertTriangle, ChevronLeft } from "lucide-react";
+import { learningApi, ApiError } from "@/lib/api";
 
 interface LabPanelProps {
   lab: Lab;
+  topicId?: string; // When set, validation is delegated to backend /learning/lab.
   onComplete: () => void;
   onBack: () => void;
 }
 
-export default function LabPanel({ lab, onComplete, onBack }: LabPanelProps) {
+export default function LabPanel({ lab, topicId, onComplete, onBack }: LabPanelProps) {
   const [input, setInput] = useState("");
   const [output, setOutput] = useState<string[]>(["[SYSTEM] Ready for simulation...", "[SYSTEM] Waiting for input..."]);
   const [isRunning, setIsRunning] = useState(false);
@@ -21,7 +23,10 @@ export default function LabPanel({ lab, onComplete, onBack }: LabPanelProps) {
   const [showHint, setShowHint] = useState(false);
   const [hintIndex, setHintIndex] = useState(0);
 
-  // Pattern-based validation: lab-provided rules, or generic fallback (any non-empty answer wins)
+  // Local pattern-based validation: only used when backend validation is not
+  // wired (no topicId) AND the lab ships explicit validationRules. The old
+  // "any non-empty answer wins" fallback is gone — empty rules now fail
+  // closed to prevent trivial passes on seeded modules.
   const validationRules = useMemo(() => {
     if (lab.validationRules && lab.validationRules.length > 0) {
       return lab.validationRules.map((r) => ({
@@ -30,30 +35,89 @@ export default function LabPanel({ lab, onComplete, onBack }: LabPanelProps) {
         isWin: r.isWin,
       }));
     }
-    return [
-      { pattern: /\S+/, response: "Submission accepted.", isWin: true },
-    ];
-  }, [lab.validationRules]);
+    // Last-resort derivation from expectedOutcome: case-insensitive contains.
+    if (lab.expectedOutcome && lab.expectedOutcome.trim()) {
+      const literal = lab.expectedOutcome.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return [
+        {
+          pattern: new RegExp(literal, "i"),
+          response: "Expected outcome matched.",
+          isWin: true,
+        },
+      ];
+    }
+    return [];
+  }, [lab.validationRules, lab.expectedOutcome]);
 
-  const runSimulation = () => {
+  const runSimulation = async () => {
     if (!input.trim()) return;
-    
+
     setIsRunning(true);
-    setOutput(prev => [...prev, `> ${input}`, "[SIM] Analyzing input patterns...", "[SIM] Executing payload against mock target..."]);
-    
+    setOutput(prev => [
+      ...prev,
+      `> ${input}`,
+      "[SIM] Analyzing input patterns...",
+      "[SIM] Executing payload against mock target...",
+    ]);
+
+    // Prefer backend validation when a topicId is supplied.
+    if (topicId) {
+      try {
+        const result = await learningApi.submitLab({
+          topic_id: topicId,
+          lab_id: lab.id,
+          payload: input,
+        });
+        setOutput(prev => [
+          ...prev,
+          `[SIM] ${result.message}`,
+          result.is_correct
+            ? "[SUCCESS] Security objective achieved."
+            : "[ERROR] Submission did not match expected pattern. Try again.",
+        ]);
+        setIsSuccess(result.is_correct);
+      } catch (err) {
+        const msg =
+          err instanceof ApiError
+            ? err.message
+            : err instanceof Error
+              ? err.message
+              : "Validation failed.";
+        setOutput(prev => [...prev, `[ERROR] ${msg}`]);
+        setIsSuccess(false);
+      } finally {
+        setIsRunning(false);
+      }
+      return;
+    }
+
+    // Fallback: local pattern matching (test/standalone usage).
     setTimeout(() => {
       setIsRunning(false);
-      
+
+      if (validationRules.length === 0) {
+        setOutput(prev => [
+          ...prev,
+          "[ERROR] This lab has no validation rules configured.",
+          "[SIM] Contact the module author or open this lab through the learning page.",
+        ]);
+        setIsSuccess(false);
+        return;
+      }
+
       const matchedRule = validationRules.find(rule => rule.pattern.test(input));
-      
       if (matchedRule) {
-        setOutput(prev => [...prev, `[SIM] ${matchedRule!.response}`]);
+        setOutput(prev => [...prev, `[SIM] ${matchedRule.response}`]);
         if (matchedRule.isWin) {
-          setOutput(prev => [...prev, "[SUCCESS] Security objective achieved.", `[SYSTEM] Flag: ${lab.expectedOutcome}`]);
+          setOutput(prev => [...prev, "[SUCCESS] Security objective achieved."]);
           setIsSuccess(true);
         }
       } else {
-        setOutput(prev => [...prev, "[ERROR] Submission did not match expected pattern.", "[SIM] Review the lab instructions and try a different approach."]);
+        setOutput(prev => [
+          ...prev,
+          "[ERROR] Submission did not match expected pattern.",
+          "[SIM] Review the lab instructions and try a different approach.",
+        ]);
         setIsSuccess(false);
       }
     }, 1200);

@@ -41,15 +41,53 @@ Edit `.env` and fill in the required values (see [Environment Variables](#enviro
    - `Project URL` → `NEXT_PUBLIC_SUPABASE_URL` in `frontend/.env.local`
    - `anon` public key → `NEXT_PUBLIC_SUPABASE_ANON_KEY` in `frontend/.env.local`
 
-### 3. Database migration
+### 3. Database setup
 
-Run this once against your PostgreSQL database (Supabase SQL editor or psql):
+The backend supports two paths, chosen via `AUTO_CREATE_TABLES`:
+
+- **Development / local** — `AUTO_CREATE_TABLES` is unset (or `true`) and
+  `ENVIRONMENT` is anything other than `production`. The app runs
+  SQLAlchemy `create_all()` on startup. No migration step needed.
+- **Production** — `AUTO_CREATE_TABLES=false` (the default for
+  `ENVIRONMENT=production`). The app skips `create_all()` because it
+  can't safely apply schema changes. Run Alembic migrations before
+  each deploy that touches the schema.
+
+#### Apply migrations (production)
+
+From the `backend/` directory, with `DATABASE_URL` set:
+
+```bash
+pip install -r requirements.txt
+alembic upgrade head
+```
+
+Or run the plain-SQL equivalent if you can't install Alembic in the
+deploy environment:
+
+```bash
+psql "$DATABASE_URL" -f backend/migrations/sql/001_add_source_question_id.sql
+psql "$DATABASE_URL" -f backend/migrations/sql/002_add_session_consecutive_correct.sql
+```
+
+See `backend/migrations/README.md` for first-time-setup details
+(stamping an existing DB, authoring new revisions).
+
+#### Legacy password-column cleanup
+
+If you are migrating from an older schema (pre-2.x with password-hash
+auth columns), run these statements once against your PostgreSQL
+database (Supabase SQL editor or psql):
 
 ```sql
-ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
-ALTER TABLE users DROP COLUMN password_hash;
-TRUNCATE users CASCADE;
+-- Drop legacy password columns left over from custom auth.
+ALTER TABLE IF EXISTS users ALTER COLUMN password_hash DROP NOT NULL;
+ALTER TABLE IF EXISTS users DROP COLUMN IF EXISTS password_hash;
 ```
+
+> **Do not** `TRUNCATE` real user tables — this is destructive.
+> If you need a clean slate in dev, drop and recreate the database
+> instead, or use a separate dev Neon branch.
 
 ### 4. Backend
 
@@ -126,7 +164,7 @@ NRL-Adaptive-Learning-System/
 │   ├── tests/
 │   ├── requirements.txt
 │   ├── seed.py                # Populates learning_modules from static JSON
-│   └── train_dqn.py           # Offline DQN training script
+│   └── app/ml/train_dqn.py    # Offline DQN training script (python -m app.ml.train_dqn)
 ├── frontend/
 │   └── src/
 │       ├── app/               # Next.js pages: dashboard, session, analytics, leaderboard, ...
@@ -149,14 +187,36 @@ Services: **backend** on :8000, **frontend** on :3000, **postgres** on :5432.
 
 ## Training the DQN (optional)
 
-The adaptive engine works without a trained model (falls back to heuristic). To train:
+> **Current status:** no `dqn_agent.pt` weights ship with the repo, so
+> the adaptive engine runs in **heuristic mode** out of the box. The
+> safety rules + heuristic fallback in `app/adaptive/rules.py` are
+> production-grade on their own; the DQN is an upgrade path, not a
+> prerequisite. Train and drop weights at
+> `backend/app/ml/models/dqn_agent.pt` to activate the neural policy.
+
+The adaptive engine works without a trained model (falls back to the
+deterministic heuristic). To produce real weights, run the training
+pipeline from the `backend/` directory with a venv that has PyTorch
+installed:
 
 ```bash
-python train_dqn.py
-# Saves weights to backend/app/ml/models/dqn_agent.pt
+cd backend
+python -m app.ml.train_dqn --episodes 50    # quick smoke run
+python -m app.ml.train_dqn                  # full 800-episode run
+# Weights are saved to backend/app/ml/models/dqn_agent.pt
 ```
 
-The engine auto-loads the weights at startup if the file exists.
+The engine auto-loads `dqn_agent.pt` at startup if the file exists.
+
+The state schema used for training is the same 7-feature vector encoded
+by `app.ml.dqn_model.encode_state`:
+
+```
+quiz_accuracy, mcq_accuracy, lab_success_rate, recent_trend,
+attempts_count, avg_response_time, topic_confidence
+```
+
+Training environment: `app.ml.student_env_v2.AdaptiveStudentEnv`.
 
 ## API Reference
 

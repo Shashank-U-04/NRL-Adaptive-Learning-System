@@ -2,179 +2,126 @@
 
 ## Product Flow
 
-Dashboard -> Learning -> Interactive module -> Inline MCQs -> Safe lab simulation -> Adaptive quiz -> Results and recommendations.
+Dashboard → Learning → Interactive module → Inline MCQs → Safe lab simulation → Adaptive quiz → Results and recommendations.
 
 Learning Mode and Quiz Mode are intentionally separate:
 
-- Learning Mode is served by Next.js routes and APIs under `frontend/src/app/learning` and `frontend/src/app/api/learning`.
-- Quiz Mode remains FastAPI + RL DQN through `/api/v1/sessions/*`.
+- **Learning Mode** — served by the FastAPI backend's `/learning/*` routes.
+  Content is stored in Postgres (`learning_modules` table), seeded from
+  `backend/app/services/module_service.py`.
+- **Quiz Mode** — FastAPI + adaptive RL engine through `/sessions/*` routes.
+  Questions come from static JSON files under `backend/app/data/cybersecurity/<topic>/`.
 - The handoff is explicit: the learner clicks `Start Quiz` after completing the module flow.
+
+---
 
 ## Folder Structure
 
 ```text
-frontend/src/app/learning/page.tsx                  Learning module browser/runner
-frontend/src/app/api/learning/modules/route.ts      Module list API
-frontend/src/app/api/learning/modules/[topicId]/    Topic module API
-frontend/src/features/learning/types.ts             Flexible module schema
-frontend/src/features/learning/components/          Renderer, MCQ, scenario, lab, summary
-frontend/src/data/learning/modules/                 Curated module JSON
-frontend/src/lib/server/ai-module-service.ts        AI generation + in-memory cache
-backend/app/services/session_service.py             Topic-aware RL quiz handoff
-backend/app/services/ai_question_service.py         DeepSeek fallback for quiz questions
-backend/app/models/models.py                        Question source field
+backend/app/api/routes/learning.py         Learning mode API (modules, lab, mcq, progress)
+backend/app/api/routes/sessions.py         Adaptive quiz session API
+backend/app/services/session_service.py    Topic-aware RL quiz lifecycle
+backend/app/services/module_service.py     Builds static module content for seeding
+backend/app/adaptive/engine.py             3-phase adaptive engine (rules → DQN → heuristic)
+backend/app/data/cybersecurity/            Static JSON question datasets (level1/2/3.json per topic)
+backend/seed.py                            Seeds topics, questions, and learning modules
+
+frontend/src/app/learning/page.tsx         Module browser + interactive runner
+frontend/src/features/learning/            UI components: LessonViewer, LabPanel, QuizEngine, etc.
+frontend/src/features/learning/types.ts    Module schema types (ServerModule, ServerLesson, etc.)
+frontend/src/data/learning/catalog.json    Frontend module catalog (topic list with metadata)
+frontend/src/lib/api.ts                    Typed API client for all backend endpoints
 ```
+
+---
 
 ## Learning Module Schema
 
-Modules use content blocks:
+Modules stored in Postgres (`learning_modules.content` JSONB) follow this structure:
 
-- `text`
-- `image`
-- `diagram`
-- `mcq_inline`
-- `scenario`
-- `lab`
-- `summary`
-
-Sample module JSON lives at:
-
-```text
-frontend/src/data/learning/modules/web-security.json
+```json
+{
+  "id": "web-security",
+  "topic_id": "web-security",
+  "title": "Web Security",
+  "description": "...",
+  "difficulty": "beginner",
+  "estimated_minutes": 18,
+  "lessons": [
+    {
+      "id": "lesson-1",
+      "title": "...",
+      "content": "...",
+      "checkpoints": []
+    }
+  ],
+  "labs": [
+    {
+      "id": "lab-1",
+      "title": "...",
+      "description": "...",
+      "instructions": [],
+      "expectedOutcome": "...",
+      "validationRules": [
+        { "pattern": "...", "flags": "i", "response": "Correct!", "isWin": true }
+      ]
+    }
+  ],
+  "quizPool": []
+}
 ```
+
+---
 
 ## APIs
 
 ### Learning APIs
 
 ```http
-GET /api/learning/modules
-GET /api/learning/modules/:topicId
+GET  /api/v1/learning/modules                 List active modules
+GET  /api/v1/learning/modules/{topic_id}      Get module detail
+POST /api/v1/learning/mcq                     Record inline MCQ answer
+POST /api/v1/learning/lab                     Validate lab submission
+POST /api/v1/learning/progress/update         Update lesson/lab/quiz progress
+GET  /api/v1/learning/progress/{topic_id}     Get user progress for topic
 ```
 
-The topic route returns a curated module if present. If no curated module exists, it checks the server cache, then optionally calls OpenAI when `OPENAI_API_KEY` is configured, then falls back to a deterministic local generated module so the learning flow never breaks.
-
-### Quiz APIs
+### Session APIs
 
 ```http
-POST /api/v1/sessions/start
-POST /api/v1/sessions/answer
-POST /api/v1/sessions/end
+POST /api/v1/sessions/start      Start adaptive quiz session
+POST /api/v1/sessions/answer     Submit answer, get next question + RL feedback
+POST /api/v1/sessions/end        End session, get summary
+GET  /api/v1/sessions/history    Last N completed sessions
 ```
 
-`POST /sessions/start` accepts:
+---
 
-```json
-{
-  "topic": "web-security"
-}
+## Lab Validation
+
+Lab submissions are validated server-side against pre-defined rules — no code execution.
+
+Lookup order:
+1. Canonical `labs[]` entry whose `id` matches `lab_id` → uses `validationRules[]` if present
+2. Any canonical lab with a non-empty `expectedOutcome` (fallback)
+3. Legacy `content[]` lab block with `type == "lab"` (backwards compat)
+
+Rule types: `contains` (substring), `regex` (safe regex via `re.search`).
+Input is always lowercased and trimmed before comparison.
+
+---
+
+## Adaptive Engine
+
+```
+State vector (7 floats):
+  quiz_accuracy, mcq_accuracy, lab_success_rate,
+  recent_trend (encoded), attempts_count, avg_response_time, topic_confidence
+
+Phase 1 — Safety rules   (always override neural policy)
+Phase 2 — DQN inference  (requires backend/app/ml/models/dqn_agent.pt)
+Phase 3 — Heuristic      (rule-based fallback, always available)
 ```
 
-The backend stores `state["topic"]`, gets the RL action, maps it to difficulty, and fetches a question by `topic + difficulty`. If the local dataset has no question, it uses cached AI-generated questions from the database.
-
-## AI Integration
-
-### OpenAI Learning Module Generation
-
-Set:
-
-```env
-OPENAI_API_KEY=...
-OPENAI_MODEL=gpt-4o-mini
-```
-
-Prompt shape:
-
-```text
-Generate a structured learning module for topic: {topic}
-Include explanation text, 2 inline MCQs, 1 real-world scenario, 1 safe simulated cybersecurity lab if applicable, and a summary.
-Return JSON with keys: topicId,title,description,difficulty,estimatedMinutes,content,quiz.
-Content block types must be only: text,image,diagram,mcq_inline,scenario,lab,summary.
-```
-
-### DeepSeek Quiz Question Generation
-
-Set:
-
-```env
-DEEPSEEK_API_KEY=...
-DEEPSEEK_MODEL=deepseek-chat
-DEEPSEEK_API_URL=https://api.deepseek.com/chat/completions
-```
-
-DeepSeek is only used when no dataset question exists. Generated quiz questions are stored in the existing `questions` table with `source="ai"` and reused later.
-
-## Lab Simulation
-
-Labs are safe string-validation simulations. They never execute system commands or browser scripts. Lab block validation supports:
-
-```text
-contains:payload
-regex:pattern
-```
-
-Examples:
-
-- SQL injection: `contains:admin' --`
-- XSS: `contains:<script>`
-- Command injection: `contains:whoami`
-- Authentication bypass: `contains:test`
-
-## Analytics
-
-Current implemented tracking:
-
-- Quiz attempts
-- Topic mastery via `LearnerMetric`
-- XP, total attempts, total correct
-
-Recommended next production upgrade:
-
-- Persist inline MCQ/lab events from Learning Mode to a backend table/collection.
-- Add per-module resume state.
-- Use module completion and lab success to recommend next topics.
-
-## Database
-
-Current repo uses SQLite for FastAPI. For production, migrate to PostgreSQL:
-
-- `users`
-- `profiles`
-- `topics`
-- `questions(source: dataset | ai)`
-- `sessions`
-- `session_events`
-- `question_attempts`
-- `learner_metrics`
-- `learning_events`
-- `module_progress`
-
-MongoDB is also valid for learning modules because content blocks are naturally document-shaped. If using MongoDB, keep quiz attempts and auth/profile data in PostgreSQL or move all analytics to a single warehouse later.
-
-## Deployment
-
-### Frontend
-
-- Deploy `frontend/` to Vercel.
-- Configure `NEXT_PUBLIC_API_URL` to point to the FastAPI backend.
-- Add `OPENAI_API_KEY` only to server-side environment variables, not public env.
-
-### Backend
-
-- Deploy FastAPI to Render, Railway, Fly.io, or AWS ECS.
-- Use PostgreSQL instead of SQLite for production.
-- Run database migrations before serving traffic.
-
-### Rate Limiting and Caching
-
-- Rate-limit AI generation routes by user/IP.
-- Keep curated modules as the first source.
-- Cache generated modules server-side and eventually persist them in MongoDB/PostgreSQL.
-- Cache generated quiz questions in the existing `questions` table.
-
-### Security
-
-- Do not execute lab input.
-- Keep all labs simulation-only.
-- Store API keys only in server-side env.
-- Use short-lived access tokens and rotate refresh tokens in production.
+The engine is a singleton (`get_adaptive_engine()`). It loads PyTorch weights once at
+startup and falls back gracefully when PyTorch is unavailable or the weights file is missing.

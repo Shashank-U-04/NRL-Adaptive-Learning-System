@@ -12,6 +12,9 @@ from __future__ import annotations
 
 import pytest
 import jwt as pyjwt
+from sqlalchemy import select
+
+from app.core.database import AsyncSessionLocal
 
 # ── JWT helper ──────────────────────────────────────────────────────────────
 _TEST_JWT_SECRET = "test-supabase-jwt-secret-sentinel"
@@ -209,9 +212,41 @@ async def test_topic_mastery_sorted_descending(client):
     Act: GET /api/v1/analytics/topics
     Assert: returned list is sorted by mastery_score descending
     """
+    from app.models.models import Question, Topic
+
     # Arrange
     sub, email = _unique_user(4)
     headers = {"Authorization": f"Bearer {_make_token(sub, email)}"}
+
+    # network-security has no JSON dataset, so /sessions/start now requires
+    # at least one DB Question row before it will accept the topic
+    # (content-backed validation, not just a Topic row). web-security is
+    # JSON-backed and registers itself automatically.
+    async with AsyncSessionLocal() as db:
+        existing_topic = (
+            await db.execute(select(Topic).where(Topic.id == "network-security"))
+        ).scalar_one_or_none()
+        if existing_topic is None:
+            db.add(Topic(id="network-security", title="Network Security", is_active=True))
+            await db.flush()
+        existing_q = (
+            await db.execute(
+                select(Question).where(Question.topic_id == "network-security")
+            )
+        ).scalar_one_or_none()
+        if existing_q is None:
+            db.add(
+                Question(
+                    topic_id="network-security",
+                    difficulty="medium",
+                    text="Network segmentation primarily reduces what risk?",
+                    options={"A": "Latency", "B": "Lateral movement", "C": "Storage cost", "D": "DNS lookups"},
+                    correct_answer="B",
+                    explanation="Segmentation contains the blast radius after a compromise.",
+                    source="dataset",
+                )
+            )
+        await db.commit()
 
     # Complete sessions under different topics
     for topic in ("web-security", "network-security"):

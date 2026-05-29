@@ -40,8 +40,9 @@ if (-not (Test-Path "$root\.env")) {
     Copy-Item "$root\.env.example" "$root\.env"
     Write-Host ""
     Write-Host " WARNING: .env created with defaults. Edit it before running:"
-    Write-Host "    - DATABASE_URL  (Neon connection string)"
-    Write-Host "    - SECRET_KEY    (long random value for prod)"
+    Write-Host "    - DATABASE_URL         (Neon connection string)"
+    Write-Host "    - SUPABASE_JWT_SECRET  (from Supabase dashboard, required)"
+    Write-Host "    - SUPABASE_URL         (optional, used for some clients)"
     Write-Host ""
 }
 

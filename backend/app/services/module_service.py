@@ -2,8 +2,7 @@
 NRL Adaptive Learning System — Module Service
 
 Provides static learning module content for database seeding.
-AI-based generation has been moved to ai_generation_service.py;
-this module handles deterministic, offline-safe content only.
+All content is deterministic and offline-safe — no AI generation or network access.
 """
 
 

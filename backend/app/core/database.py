@@ -10,9 +10,9 @@ from __future__ import annotations
 import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import declarative_base
 
 from app.core.config import DATABASE_URL
+from app.core.db_base import Base  # re-exported for backwards compatibility
 
 logger = logging.getLogger("nrl.database")
 
@@ -40,7 +40,14 @@ AsyncSessionLocal = async_sessionmaker(
 # Backwards-compat alias for any code that imported the old name
 async_session_factory = AsyncSessionLocal
 
-Base = declarative_base()
+__all__ = [
+    "engine",
+    "AsyncSessionLocal",
+    "async_session_factory",
+    "Base",
+    "get_db",
+    "init_db",
+]
 
 
 async def get_db() -> AsyncSession:  # type: ignore[return]

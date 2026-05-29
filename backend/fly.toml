@@ -1,11 +1,24 @@
 # Fly.io configuration for the NRL backend.
-# Deploy with:
-#   cd backend && flyctl launch --no-deploy   # one-time setup
-#   flyctl secrets set DATABASE_URL=... SECRET_KEY=...
+#
+# Required secrets (set with `flyctl secrets set ...` — never commit):
+#   DATABASE_URL          postgresql+asyncpg://... (Neon connection)
+#   SUPABASE_JWT_SECRET   Supabase project JWT signing secret (HS256)
+#
+# Optional secrets:
+#   SUPABASE_URL          https://<project>.supabase.co (if used by code)
+#   CORS_ORIGINS          comma-separated allow-list, e.g.
+#                         https://nrl-adaptive.vercel.app
+#
+# Deploy order:
+#   cd backend && flyctl launch --no-deploy            # one-time
+#   flyctl secrets set DATABASE_URL=... SUPABASE_JWT_SECRET=...
+#   # Apply any pending migrations BEFORE deploying new code:
+#   alembic upgrade head                                # from backend/
+#   # ...or run the plain-SQL fallback (see backend/migrations/sql/).
 #   flyctl deploy
 #
-# This config uses Heroku buildpacks — NO Docker Desktop required locally.
-# Fly.io builds the image remotely.
+# AUTO_CREATE_TABLES is intentionally "false" below so production never
+# silently mutates the schema on boot. Run migrations explicitly.
 
 app = "nrl-adaptive-api"
 primary_region = "sin"          # Singapore — closest to Neon ap-southeast-1
@@ -17,17 +30,15 @@ kill_timeout   = 5
   buildpacks = ["gcr.io/paketo-buildpacks/python"]
 
 [env]
-  PORT          = "8000"
-  ENVIRONMENT   = "production"
-  DEBUG         = "false"
-  LOG_JSON      = "true"
-  AI_PROVIDER   = "ollama"        # override per environment
-  METRICS_ENABLED      = "true"
-  RATE_LIMIT_ENABLED   = "true"
-  RATE_LIMIT_DEFAULT   = "120/minute"
-  RATE_LIMIT_AUTH      = "10/minute"
-  # Set via flyctl secrets set CORS_ORIGINS=https://your-frontend.vercel.app
-  CORS_ORIGINS         = "https://nrl-adaptive.vercel.app"
+  PORT        = "8000"
+  ENVIRONMENT = "production"
+  DEBUG       = "false"
+  LOG_LEVEL   = "INFO"
+  # CORS_ORIGINS can be overridden per environment via flyctl secrets set.
+  CORS_ORIGINS = "https://nrl-adaptive.vercel.app"
+  # In production we require explicit migrations or this opt-in flag to
+  # trigger SQLAlchemy create_all() at startup. Default off.
+  AUTO_CREATE_TABLES = "false"
 
 [processes]
   app = "uvicorn app.main:app --host 0.0.0.0 --port 8000"

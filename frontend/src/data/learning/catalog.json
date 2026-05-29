@@ -1,30 +1,37 @@
 [
   {
-    "topicId": "networking",
-    "title": "Networking",
-    "description": "Protocols, ports, DNS, TLS, firewalls, and network traffic reasoning.",
+    "topicId": "web-security",
+    "title": "Web Security",
+    "description": "OWASP Top 10, XSS, CSRF, SQL injection, secure HTTP headers.",
     "difficulty": "easy",
+    "estimatedMinutes": 18
+  },
+  {
+    "topicId": "network-security",
+    "title": "Network Security",
+    "description": "TLS, segmentation, firewalls, intrusion detection, VPNs.",
+    "difficulty": "medium",
+    "estimatedMinutes": 18
+  },
+  {
+    "topicId": "cryptography",
+    "title": "Cryptography",
+    "description": "Symmetric/asymmetric keys, hashing, signing, key management.",
+    "difficulty": "medium",
+    "estimatedMinutes": 20
+  },
+  {
+    "topicId": "auth-and-iam",
+    "title": "Authentication & IAM",
+    "description": "MFA, SSO, OAuth, JWTs, role-based access control.",
+    "difficulty": "medium",
     "estimatedMinutes": 16
   },
   {
-    "topicId": "web-security",
-    "title": "Web Security",
-    "description": "Practice SQL injection, XSS, authentication flaws, session security, and browser defenses.",
-    "difficulty": "easy",
-    "estimatedMinutes": 18
-  },
-  {
-    "topicId": "system-security",
-    "title": "System Security",
-    "description": "Hardening, privileges, patching, endpoint controls, and secure configuration.",
+    "topicId": "secure-coding",
+    "title": "Secure Coding",
+    "description": "Input validation, dependency scanning, secrets handling, OWASP ASVS.",
     "difficulty": "medium",
     "estimatedMinutes": 18
-  },
-  {
-    "topicId": "ethical-hacking",
-    "title": "Ethical Hacking",
-    "description": "Responsible testing workflow: recon, enumeration, safe exploitation, and reporting.",
-    "difficulty": "medium",
-    "estimatedMinutes": 20
   }
 ]

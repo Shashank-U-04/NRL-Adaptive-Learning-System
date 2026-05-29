@@ -56,6 +56,27 @@ export default function QuizEngine({ questions, title, onComplete, onBack, userW
 
   const currentQuestion = adaptivePool[currentIdx];
 
+  // ── Empty-pool guard ────────────────────────────────────
+  // Nothing to render or compute below if no questions were supplied.
+  if (adaptivePool.length === 0 || !currentQuestion) {
+    return (
+      <div className="max-w-2xl mx-auto py-12">
+        <GlassCard className="text-center p-12">
+          <div className="w-24 h-24 rounded-full bg-slate-800/40 flex items-center justify-center border border-slate-700 mx-auto mb-8">
+            <BarChart3 className="w-12 h-12 text-slate-500" />
+          </div>
+          <h2 className="text-2xl font-bold text-white mb-2">No quiz available</h2>
+          <p className="text-slate-400 mb-8 font-medium">
+            This module doesn&apos;t have any quiz questions yet. Try a lesson or lab instead.
+          </p>
+          <NeumorphicButton onClick={onBack} className="!px-8 !py-3">
+            Back to module
+          </NeumorphicButton>
+        </GlassCard>
+      </div>
+    );
+  }
+
   const handleNext = () => {
     if (currentIdx < adaptivePool.length - 1) {
       setCurrentIdx(currentIdx + 1);

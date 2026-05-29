@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
-import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { learningApi } from "@/lib/api";
 import {
@@ -28,7 +27,6 @@ function initials(name: string) {
 export default function Sidebar() {
   const pathname = usePathname();
   const { user, logout, isAuthenticated } = useAuth();
-  const router = useRouter();
 
   const { data: modulesResp, isSuccess: modulesLoaded } = useQuery({
     queryKey: ["sidebar-modules-count"],
@@ -43,9 +41,10 @@ export default function Sidebar() {
       ? String(modulesResp.data.modules.length)
       : null;
 
-  const handleLogout = () => {
-    logout();
-    router.push("/");
+  const handleLogout = async () => {
+    // auth-context.logout() delegates to doSignOut() which handles the
+    // redirect to /login; do NOT push("/") here or it races the redirect.
+    await logout();
   };
 
   return (

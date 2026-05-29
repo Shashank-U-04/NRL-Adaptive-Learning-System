@@ -58,6 +58,10 @@ class MCQSubmission(BaseModel):
 class LabSubmission(BaseModel):
     topic_id: str
     payload: str
+    # Optional: identifies a specific lab inside the module's canonical
+    # ``labs[]`` array. When provided, the backend prefers that lab's rules
+    # over the legacy ``content[]`` lab block.
+    lab_id: str | None = None
 
 
 class ProgressUpdate(BaseModel):
@@ -76,26 +80,32 @@ async def get_progress(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Fetch user progress for a specific topic."""
+    """Fetch user progress for a specific topic.
+
+    Validates the topic first so unknown / typo slugs return 400 rather than
+    silently returning an empty progress shape that hides the error.
+    """
+    await _validate_topic(topic_id, db)
+
     stmt = select(ModuleProgress).where(
         ModuleProgress.user_id == user.id,
         ModuleProgress.topic_id == topic_id,
     )
     progress = (await db.execute(stmt)).scalar_one_or_none()
-    
+
     if not progress:
         return {
             "completed_lessons": [],
             "completed_labs": [],
             "quiz_scores": [],
-            "is_completed": False
+            "is_completed": False,
         }
-        
+
     return {
         "completed_lessons": progress.completed_lessons,
         "completed_labs": progress.completed_labs,
         "quiz_scores": progress.quiz_scores,
-        "is_completed": progress.is_completed
+        "is_completed": progress.is_completed,
     }
 
 
@@ -106,6 +116,8 @@ async def update_progress(
     user: User = Depends(get_current_user),
 ):
     """Update user progress (lessons, labs, or quiz scores)."""
+    await _validate_topic(body.topic_id, db)
+
     stmt = select(ModuleProgress).where(
         ModuleProgress.user_id == user.id,
         ModuleProgress.topic_id == body.topic_id,
@@ -125,10 +137,10 @@ async def update_progress(
     if body.lesson_id and body.lesson_id not in progress.completed_lessons:
         # Use a copy to trigger SQLAlchemy change detection for JSONB
         progress.completed_lessons = list(set(progress.completed_lessons + [body.lesson_id]))
-        
+
     if body.lab_id and body.lab_id not in progress.completed_labs:
         progress.completed_labs = list(set(progress.completed_labs + [body.lab_id]))
-        
+
     if body.quiz_score is not None:
         new_score = {
             "score": body.quiz_score,
@@ -140,7 +152,9 @@ async def update_progress(
             progress.is_completed = True
 
     progress.updated_at = datetime.now(timezone.utc)
-    await db.commit()
+    # get_db() commits at the end of the request — flush sends the SQL now
+    # without locking us into a partial commit before later work.
+    await db.flush()
     return {"status": "success", "progress": {
         "completed_lessons": progress.completed_lessons,
         "completed_labs": progress.completed_labs,
@@ -255,9 +269,72 @@ async def submit_mcq(
         },
     )
     db.add(event)
-    await db.commit()
+    # get_db commits after the handler returns; flush here for ID assignment only.
+    await db.flush()
     logger.info(f"MCQ recorded: user={user.id} topic={body.topic_id} correct={body.is_correct}")
     return {"status": "recorded", "is_correct": body.is_correct}
+
+
+def _resolve_lab_rules(module_content: dict, lab_id: str | None) -> dict | None:
+    """Return a ``{rule_type, pattern, success_message}`` dict for the lab.
+
+    Lookup precedence:
+      1. Canonical ``labs[]`` entry whose ``id`` matches ``lab_id`` — uses
+         the lab's ``validationRules[]`` if present, otherwise derives a
+         "contains" rule from ``expectedOutcome``.
+      2. Any canonical lab whose ``expectedOutcome`` is non-empty (when
+         ``lab_id`` is absent but exactly one lab exists, or as a fallback).
+      3. Legacy ``content[]`` lab block (``type == "lab"``) — unchanged
+         from the v1 module shape.
+
+    Returns ``None`` if no validatable lab is found.
+    """
+    labs = module_content.get("labs") or []
+
+    canonical = None
+    if lab_id:
+        canonical = next((lab for lab in labs if lab.get("id") == lab_id), None)
+    if canonical is None and len(labs) == 1:
+        canonical = labs[0]
+
+    if canonical is not None:
+        rules = canonical.get("validationRules") or []
+        win_rule = next(
+            (r for r in rules if r.get("isWin") and r.get("pattern")),
+            None,
+        ) or next((r for r in rules if r.get("pattern")), None)
+        if win_rule:
+            return {
+                "rule_type": "regex",
+                "pattern": str(win_rule["pattern"]).strip(),
+                "flags": win_rule.get("flags") or "i",
+                "success_message": win_rule.get("response") or "Correct!",
+            }
+        expected = (canonical.get("expectedOutcome") or "").strip()
+        if expected:
+            return {
+                "rule_type": "contains",
+                "pattern": expected.lower(),
+                "flags": None,
+                "success_message": "Correct!",
+            }
+
+    lab_block = next(
+        (b for b in module_content.get("content", []) if b.get("type") == "lab"),
+        None,
+    )
+    if lab_block:
+        validation = lab_block.get("validation") or {}
+        pattern = (validation.get("pattern") or "").strip().lower()
+        if pattern:
+            return {
+                "rule_type": validation.get("rule_type", "contains"),
+                "pattern": pattern,
+                "flags": None,
+                "success_message": lab_block.get("successMessage", "Correct!"),
+            }
+
+    return None
 
 
 @router.post("/lab", status_code=status.HTTP_200_OK)
@@ -266,13 +343,13 @@ async def submit_lab(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """
-    Validate a lab submission against the module's pre-defined rule.
+    """Validate a lab submission against the module's pre-defined rule.
+
     Input is trimmed and lowercased before comparison (no code execution).
+    Canonical ``labs[]`` rules win over the legacy ``content[]`` block.
     """
     await _validate_topic(body.topic_id, db)
 
-    # Fetch module
     stmt = select(LearningModule).where(
         LearningModule.topic_id == body.topic_id,
         LearningModule.is_active == True,  # noqa: E712
@@ -281,49 +358,53 @@ async def submit_lab(
     if not module:
         raise HTTPException(status_code=404, detail="Module not found for this topic.")
 
-    # Find lab block
-    lab_block = next(
-        (b for b in module.content.get("content", []) if b.get("type") == "lab"), None
-    )
-    if not lab_block:
-        raise HTTPException(status_code=400, detail="No lab found in this module.")
+    rule = _resolve_lab_rules(module.content, body.lab_id)
+    if rule is None:
+        raise HTTPException(status_code=400, detail="No lab validation rules found for this module.")
 
-    validation = lab_block.get("validation", {})
-    rule_type = validation.get("rule_type", "contains")
-    pattern = validation.get("pattern", "").strip().lower()
-
-    # Normalize input
+    pattern = rule["pattern"]
+    rule_type = rule["rule_type"]
     normalized = body.payload.strip().lower()
 
-    # Safe validation — no arbitrary code execution
-    is_correct = False
-    if rule_type == "contains":
-        is_correct = pattern in normalized
+    # Empty payload is never a pass — closes the "any non-empty input wins" hole.
+    if not normalized:
+        is_correct = False
+    elif rule_type == "contains":
+        is_correct = bool(pattern) and pattern in normalized
     elif rule_type == "regex":
         try:
-            # Use pre-defined safe patterns only (no user-supplied regex)
-            is_correct = bool(re.fullmatch(pattern, normalized))
+            flags = re.IGNORECASE if (rule.get("flags") or "").lower().find("i") != -1 else 0
+            is_correct = re.search(pattern, normalized, flags) is not None
         except re.error:
-            logger.error(f"Invalid regex pattern in lab for topic={body.topic_id}: {pattern!r}")
+            logger.error("Invalid regex pattern in lab for topic=%s: %r", body.topic_id, pattern)
             is_correct = False
     else:
-        is_correct = normalized == pattern   # exact match fallback
+        is_correct = normalized == pattern
 
     event = LearningEvent(
         user_id=user.id,
         topic_id=body.topic_id,
         event_type="lab",
         is_correct=is_correct,
-        details={"submitted": normalized, "pattern": pattern, "rule_type": rule_type},
+        details={
+            "submitted": normalized,
+            "pattern": pattern,
+            "rule_type": rule_type,
+            "lab_id": body.lab_id,
+        },
     )
     db.add(event)
-    await db.commit()
-    logger.info(f"Lab recorded: user={user.id} topic={body.topic_id} correct={is_correct}")
+    # Same rationale as above — let get_db own the transaction boundary.
+    await db.flush()
+    logger.info(
+        "Lab recorded: user=%s topic=%s lab=%s correct=%s",
+        user.id, body.topic_id, body.lab_id, is_correct,
+    )
 
     return {
         "status": "recorded",
         "is_correct": is_correct,
-        "message": lab_block.get("successMessage", "Correct!") if is_correct else "Incorrect — try again.",
+        "message": rule["success_message"] if is_correct else "Incorrect — try again.",
     }
 
 

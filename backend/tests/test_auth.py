@@ -74,3 +74,69 @@ async def test_me_wrong_secret_returns_401(client):
         "/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"}
     )
     assert r.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_me_token_missing_sub_returns_401(client):
+    """A token with no `sub` claim must be rejected even if the signature is valid."""
+    token = pyjwt.encode(
+        {"email": "no-sub@example.com", "aud": "authenticated", "role": "authenticated"},
+        _TEST_JWT_SECRET,
+        algorithm="HS256",
+    )
+    r = await client.get(
+        "/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert r.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_me_service_role_token_rejected(client):
+    """Service-role tokens share the signing secret but must NOT impersonate users."""
+    token = pyjwt.encode(
+        {
+            "sub": "00000000-0000-0000-0000-000000000010",
+            "email": "service@example.com",
+            "role": "service_role",
+            "aud": "https://example.supabase.co",
+        },
+        _TEST_JWT_SECRET,
+        algorithm="HS256",
+    )
+    r = await client.get(
+        "/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert r.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_me_anon_role_token_rejected(client):
+    """Anon (public) tokens must not be accepted as end-user credentials."""
+    token = pyjwt.encode(
+        {"sub": "anon", "role": "anon", "aud": "anon"},
+        _TEST_JWT_SECRET,
+        algorithm="HS256",
+    )
+    r = await client.get(
+        "/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert r.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_me_accepts_aud_list_with_authenticated(client):
+    """Some Supabase versions issue `aud` as a list — ensure that path works."""
+    token = pyjwt.encode(
+        {
+            "sub": "00000000-0000-0000-0000-000000000020",
+            "email": "list-aud@example.com",
+            "aud": ["authenticated", "https://example.supabase.co"],
+        },
+        _TEST_JWT_SECRET,
+        algorithm="HS256",
+    )
+    r = await client.get(
+        "/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert r.status_code == 200
+    assert r.json()["user"]["email"] == "list-aud@example.com"

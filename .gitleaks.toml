@@ -1,0 +1,50 @@
+# gitleaks configuration for NRL Adaptive Learning System.
+# Extends the upstream default ruleset and adds a Supabase JWT secret rule.
+#
+# Allowlist policy: ONLY harmless, documented sentinel strings (test
+# fixtures, obvious doc placeholders). NEVER allowlist a real leaked
+# secret, the file it lived in, or a document that quotes leaked
+# material. If you find yourself wanting to allowlist a real value or a
+# specific file path that has ever held one — sanitize/delete the file
+# instead, then (after owner approval) scrub git history.
+
+title = "NRL gitleaks config"
+
+[extend]
+useDefault = true
+
+# ── Custom rule: Supabase JWT secret patterns ──────────────────────
+# The legacy Supabase JWT secret is a long base64 string ending in ==
+# (~88 chars). The new format is sb_secret_<token>.
+[[rules]]
+id = "supabase-jwt-secret-legacy"
+description = "Possible Supabase legacy JWT secret (base64, ends with ==)"
+regex = '''(?i)(supabase[_-]?jwt[_-]?secret|jwt[_-]?secret)["'\s:=]+[A-Za-z0-9+/]{60,}={1,2}'''
+tags = ["supabase", "secret"]
+
+[[rules]]
+id = "supabase-jwt-secret-modern"
+description = "Possible Supabase JWT secret (sb_secret_ prefix)"
+regex = '''sb_secret_[A-Za-z0-9_-]{20,}'''
+tags = ["supabase", "secret"]
+
+# ── Allowlist: harmless documented sentinels ONLY ──────────────────
+# Do NOT add real leaked values, paths to files that ever held a real
+# secret, or wide path globs that could mask future leaks. Add path
+# entries only for vendored code / build artefacts that we have no
+# reason to scan.
+[allowlist]
+description = "Test fixtures and obvious doc placeholders"
+regexes = [
+  '''test-supabase-jwt-secret-sentinel''',
+  '''placeholder-anon-key''',
+  '''your-supabase-jwt-secret''',
+  '''your-anon-key''',
+]
+paths = [
+  '''(?i)node_modules/''',
+  '''(?i)\.venv/''',
+  '''(?i)\.next/''',
+  '''(?i)dist/''',
+  '''(?i)build/''',
+]

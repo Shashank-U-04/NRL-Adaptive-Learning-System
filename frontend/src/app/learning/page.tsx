@@ -491,6 +491,7 @@ function LearningPageInner() {
           {viewState === "lab" && activeLab && (
             <LabPanel
               lab={activeLab}
+              topicId={selectedTopic ?? undefined}
               onBack={() => setViewOverride(null)}
               onComplete={() => handleLabComplete(activeLab.id)}
             />
@@ -698,8 +699,17 @@ function ModuleView({
                 : `Test your knowledge of ${module.title} through an adaptive assessment.`}
             </p>
           </div>
-          <button className="btn btn-primary btn-lg" onClick={onStartQuiz}>
-            {progress?.is_completed ? "Retake quiz" : "Start quiz"}
+          <button
+            className="btn btn-primary btn-lg"
+            onClick={onStartQuiz}
+            disabled={module.quizPool.length === 0}
+            title={module.quizPool.length === 0 ? "No quiz questions yet" : undefined}
+          >
+            {module.quizPool.length === 0
+              ? "No quiz available"
+              : progress?.is_completed
+                ? "Retake quiz"
+                : "Start quiz"}
           </button>
         </div>
       )}

@@ -5,6 +5,7 @@ Start: uvicorn app.main:app --reload
 """
 
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
@@ -23,12 +24,32 @@ setup_logging()
 logger = logging.getLogger("nrl")
 
 
+def _should_auto_create_tables() -> bool:
+    """Decide whether to run SQLAlchemy ``create_all()`` at startup.
+
+    Production must opt in explicitly via ``AUTO_CREATE_TABLES=true`` because
+    ``create_all`` does NOT handle schema changes — real environments should
+    use Alembic or a migration tool. Development and test environments run
+    it by default so the local DX stays one command.
+    """
+    explicit = os.getenv("AUTO_CREATE_TABLES")
+    if explicit is not None:
+        return explicit.strip().lower() in {"1", "true", "yes", "on"}
+    return ENVIRONMENT.lower() not in {"production", "prod"}
+
+
 # ── Lifespan ─────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info(f"Starting {APP_NAME} v{APP_VERSION} (env={ENVIRONMENT})")
-    await init_db()
-    logger.info("Database tables verified.")
+    if _should_auto_create_tables():
+        await init_db()
+        logger.info("Database tables verified (create_all ran).")
+    else:
+        logger.info(
+            "Skipping create_all in %s — set AUTO_CREATE_TABLES=true to override.",
+            ENVIRONMENT,
+        )
 
     # Pre-warm adaptive engine
     from app.adaptive.engine import get_adaptive_engine

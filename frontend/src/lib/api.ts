@@ -197,6 +197,7 @@ export const analyticsApi = {
       }>;
       weak_topics: Array<{
         topic: string;
+        topic_slug?: string;
         mastery: number;
         attempted: number;
       }>;
@@ -278,6 +279,12 @@ export const learningApi = {
   }) =>
     apiFetch<{ status: string; progress: Record<string, unknown> }>(
       "/learning/progress/update",
+      { method: "POST", body: JSON.stringify(data) },
+    ),
+
+  submitLab: (data: { topic_id: string; lab_id?: string; payload: string }) =>
+    apiFetch<{ status: string; is_correct: boolean; message: string }>(
+      "/learning/lab",
       { method: "POST", body: JSON.stringify(data) },
     ),
 };
